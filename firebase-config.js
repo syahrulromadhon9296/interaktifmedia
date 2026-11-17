@@ -5,6 +5,12 @@
 //  Nilai di bawah ini aman untuk publik: keamanan data diatur oleh firestore.rules.
 // ===================================================================
 
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDg2l4HEX3RelzqA3eB1OCFFPPNrG4LATs",
   authDomain: "interaktifmedia.firebaseapp.com",
@@ -16,8 +22,3 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-
-// Email yang boleh membuka dashboard admin (huruf kecil semua).
-export const ADMIN_EMAILS = [
-  "syahrulromadhon9296@gmail.com",
-];
