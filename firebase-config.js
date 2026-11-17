@@ -5,7 +5,6 @@
 //  Nilai di bawah ini aman untuk publik: keamanan data diatur oleh firestore.rules.
 // ===================================================================
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDg2l4HEX3RelzqA3eB1OCFFPPNrG4LATs",
   authDomain: "interaktifmedia.firebaseapp.com",
