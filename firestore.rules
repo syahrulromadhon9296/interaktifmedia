@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Aturan keamanan database.
+// - Semua orang (tanpa login) boleh MEMBACA karya dan profil.
+// - Hanya email admin yang boleh MENAMBAH, MENGUBAH, dan MENGHAPUS.
+// Ganti email di bawah dengan email admin Anda (sama dengan firebase-config.js).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email.lower() in [
+          'email-admin@contoh.com'
+        ];
+    }
+
+    match /karya/{id} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && (request.method == 'delete' || (
+             request.resource.data.judul is string
+             && request.resource.data.judul.size() <= 80
+             && request.resource.data.desk is string
+             && request.resource.data.desk.size() <= 220));
+    }
+
+    match /site/profil {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Selain di atas, semuanya ditolak.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
