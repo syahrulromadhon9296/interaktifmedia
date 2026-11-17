@@ -23,9 +23,11 @@
 
   // Initialize Firebase
   const app = initializeApp(firebaseConfig);
-</script>
 
 // Email yang boleh membuka dashboard admin (huruf kecil semua).
 export const ADMIN_EMAILS = [
   "syahrulromadhon9296@gmail.com",
 ];
+</script>
+
+
