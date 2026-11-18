@@ -337,6 +337,29 @@
   .confirm .dialog{max-width:420px;padding:26px;text-align:center}
   .confirm .big{font-size:3rem}
   .confirm .form-actions{justify-content:center}
+
+  /* ===== UPLOAD & PLAYER ===== */
+  .drop{border:2px dashed var(--line);border-radius:14px;padding:18px;text-align:center;cursor:pointer;background:var(--bg);transition:.2s}
+  .drop:hover,.drop.over{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 8%,var(--bg))}
+  .drop small{color:var(--muted)}
+  .file-chip{display:flex;align-items:center;gap:12px;text-align:left}
+  .file-chip .fi{width:44px;height:44px;border-radius:12px;background:var(--soft);display:grid;place-items:center;font-size:1.4rem;flex:none}
+  .file-chip .fm{flex:1;min-width:0}
+  .file-chip .fm b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .panel.has-frame{padding:0;overflow:hidden;place-items:stretch}
+  .karya-frame{width:100%;height:62vh;border:0;background:#fff;display:block}
+  .karya-img{max-width:100%;max-height:62vh;display:block;margin:auto}
+  .frame-bar{display:flex;gap:8px;justify-content:flex-end;padding:8px;background:var(--card);border-top:1px solid var(--line)}
+  #play{display:none;height:100vh;flex-direction:column;background:var(--bg)}
+  body.route-play #site,body.route-play #admin{display:none!important}
+  body.route-play #play{display:flex}
+  .play-top{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--navy);color:#fff}
+  .play-top b{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .play-top .btn{padding:8px 12px;font-size:.88rem}
+  .play-body{flex:1;display:grid;place-items:center;overflow:auto}
+  .play-body iframe{width:100%;height:100%;border:0;background:#fff}
+  .qr-real{background:#fff;padding:14px;border-radius:14px;display:inline-block;box-shadow:var(--shadow)}
+  .qr-real img,.qr-real canvas{display:block}
 </style>
 </head>
 <body>
@@ -544,6 +567,16 @@
 <div class="toast" id="toast" role="status"></div>
 
 
+<!-- ===== PEMUTAR LAYAR PENUH (?karya=ID) ===== -->
+<div id="play">
+  <div class="play-top">
+    <a class="btn btn-ghost" id="playBack" href="./">← Situs</a>
+    <b id="playTitle">Memuat…</b>
+    <button class="btn btn-ghost" id="playCopy">🔗 Salin</button>
+  </div>
+  <div class="play-body" id="playBody"><p style="color:var(--muted)">Memuat karya…</p></div>
+</div>
+
 <!-- ===== ADMIN DASHBOARD ===== -->
 <div id="admin">
   <div class="ad-top">
@@ -615,7 +648,12 @@
               <div class="fld"><label for="kTipe">Jenis</label><select id="kTipe"><option value="lab">🧪 Lab</option><option value="game">🎮 Game</option><option value="web">🖥️ Web</option></select></div>
               <div class="fld full"><label>Ikon</label><div class="emojis" id="kIkon"></div></div>
               <div class="fld full"><label>Warna latar</label><div class="swatches" id="kWarna"></div></div>
-              <div class="fld"><label for="kLink">Tautan karya</label><input type="url" id="kLink" placeholder="https://…"><small>Untuk tombol "Buka di tab baru".</small><span class="err">Harus diawali https://</span></div>
+              <div class="fld full"><label>Berkas karya <small style="font-weight:500">(opsional)</small></label>
+                <div class="drop" id="kDrop" tabindex="0" role="button" aria-label="Pilih berkas karya"></div>
+                <input type="file" id="kFile" accept=".html,.htm,.pdf,image/*" hidden>
+                <small>File HTML tunggal (CSS &amp; JS di dalamnya), PDF, atau gambar. Siswa bisa langsung mencobanya di situs.</small>
+                <span class="err" id="kFileErr" style="display:none"></span></div>
+              <div class="fld"><label for="kLink">Tautan karya</label><input type="url" id="kLink" placeholder="https://…"><small>Opsional bila karya ada di situs lain.</small><span class="err">Harus diawali https://</span></div>
               <div class="fld"><label for="kVideo">Tautan video demo</label><input type="url" id="kVideo" placeholder="https://youtube.com/…"><span class="err">Harus diawali https://</span></div>
               <div class="fld"><label for="kDemo">Demo bawaan</label><select id="kDemo"><option value="umum">— Tidak ada —</option><option value="ohm">⚡ Hukum Ohm</option><option value="rgb">🎨 Warna RGB</option><option value="logika">💡 Gerbang logika</option><option value="subnet">🌐 Subnet</option><option value="kuis">🧩 Kuis HTML</option></select><small>Simulasi kecil di tab "Coba langsung".</small></div>
               <div class="fld"><label for="kDurasi">Durasi video</label><input type="text" id="kDurasi" maxlength="8" placeholder="2:30"></div>
@@ -691,7 +729,11 @@ const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">
 const okUrl = u => /^https?:\/\/\S+$/i.test(u||"");
 const isNew = k => k.tgl && (Date.now()-new Date(k.tgl))/864e5 < 30;
 const pageLink = () => location.href.split("#")[0] + "#karya";
-const linkOf = k => (k && okUrl(k.link)) ? k.link : pageLink();
+const BERKAS_TIPE={html:"🌐 HTML",pdf:"📄 PDF",image:"🖼️ Gambar"};
+const MAX_HTML=900000, MAX_DATAURL=950000; // batas 1 dokumen Firestore ±1 MB
+const playLink = k => location.href.split("#")[0].split("?")[0] + "?karya=" + encodeURIComponent(k.id);
+const linkOf = k => !k ? pageLink() : k.berkas ? playLink(k) : okUrl(k.link) ? k.link : pageLink();
+const fmtSize = n => n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
 const today = () => new Date().toISOString().slice(0,10);
 $("#yr").textContent = new Date().getFullYear();
 
@@ -701,7 +743,8 @@ function clean(id, d){
   return {id, judul:s(d.judul,80)||"Tanpa judul", desk:s(d.desk,220), mapel:s(d.mapel,40)||"Umum",
     tipe:TIPE[d.tipe]?d.tipe:"lab", ikon:s(d.ikon,8)||"📦", warna:/^#[0-9a-f]{6}$/i.test(d.warna)?d.warna:"#e8edf8",
     unggulan:!!d.unggulan, tgl:/^\d{4}-\d{2}-\d{2}$/.test(d.tgl)?d.tgl:"", demo:DEMOS.includes(d.demo)?d.demo:"umum",
-    durasi:s(d.durasi,8), link:okUrl(d.link)?d.link:"", video:okUrl(d.video)?d.video:""};
+    durasi:s(d.durasi,8), link:okUrl(d.link)?d.link:"", video:okUrl(d.video)?d.video:"",
+    berkas:(d.berkas&&BERKAS_TIPE[d.berkas.tipe])?{nama:s(d.berkas.nama,100)||"berkas",tipe:d.berkas.tipe,ukuran:+d.berkas.ukuran||0}:null};
 }
 
 /* ================= THEME & MENU ================= */
@@ -767,7 +810,7 @@ function cardHTML(k,i=0,actions=true){
       <div class="card-body">
         <h3>${actions?hl(k.judul):esc(k.judul)}</h3>
         <p>${actions?hl(k.desk):esc(k.desk)}</p>
-        <div class="badges"><span class="badge">${actions?hl(k.mapel):esc(k.mapel)}</span><span class="badge ok">✓ Tanpa instal</span>${k.durasi?`<span class="badge">▶ ${esc(k.durasi)}</span>`:""}</div>
+        <div class="badges"><span class="badge">${actions?hl(k.mapel):esc(k.mapel)}</span><span class="badge ok">✓ Tanpa instal</span>${k.berkas?`<span class="badge">📎 ${BERKAS_TIPE[k.berkas.tipe].split(" ")[1]}</span>`:""}${k.durasi?`<span class="badge">▶ ${esc(k.durasi)}</span>`:""}</div>
         <div class="card-actions">
           <button class="btn btn-dark" ${actions?`data-id="${esc(k.id)}"`:"type=button"}>▶ Coba</button>
           <button class="btn btn-outline share" ${actions?`data-share="${esc(k.id)}"`:"type=button"} aria-label="Salin tautan ${esc(k.judul)}" title="Salin tautan">🔗</button>
@@ -849,8 +892,52 @@ function setTab(t){
   $$(".tab").forEach(x=>{x.classList.toggle("active",x.dataset.tab===t);x.setAttribute("aria-selected",x.dataset.tab===t);});
   const p=$("#mPanel");
   if(t==="video")p.innerHTML=cur.video?`<div><div style="font-size:4rem">🎬</div><p><b>Video demo ${esc(cur.judul)}</b></p><a class="btn btn-primary" href="${esc(cur.video)}" target="_blank" rel="noopener">▶ Tonton video</a></div>`:`<div><div style="font-size:4rem">🎬</div><p style="margin:8px 0 0"><b>Video belum tersedia</b></p><p style="color:var(--muted);margin:4px 0 0">Admin bisa menambahkan tautan video di dashboard.</p></div>`;
-  if(t==="qr")p.innerHTML=`<div><div class="qr">${fakeQR(cur.id)}</div><p style="margin:14px 0 0"><b>Pindai untuk membuka di HP</b></p><p style="color:var(--muted);margin:4px 0 0;font-size:.85rem">Tampilkan di proyektor agar siswa bisa langsung memindai.</p></div>`;
-  if(t==="coba"){p.innerHTML=labHTML(cur.demo);initLab(cur.demo);}
+  p.classList.remove("has-frame");p.style.display="";
+  if(t==="qr"){const url=linkOf(cur);p.innerHTML=`<div><div class="qr-real" id="qrBox"></div><p style="margin:14px 0 0"><b>Pindai untuk membuka di HP</b></p><p style="color:var(--muted);margin:4px 0 0;font-size:.8rem;word-break:break-all">${esc(url)}</p></div>`;drawQR($("#qrBox"),url,cur.id);}
+  if(t==="coba"){
+    if(cur.berkas){showBerkas(p,cur,true);}
+    else{p.innerHTML=labHTML(cur.demo);initLab(cur.demo);}
+  }
+}
+/* ---------- berkas karya ---------- */
+const BERKAS_CACHE={};
+async function loadBerkas(id){
+  if(BERKAS_CACHE[id])return BERKAS_CACHE[id];
+  const snap=await db.doc("berkas/"+id).get();
+  if(!snap.exists)throw new Error("Berkas tidak ditemukan");
+  const d=snap.data()||{};
+  if(typeof d.isi!=="string"||!BERKAS_TIPE[d.tipe])throw new Error("Berkas rusak");
+  return BERKAS_CACHE[id]=d;
+}
+function dataUrlToBlobUrl(u){const[h,b]=u.split(",");const mime=(h.match(/data:([^;]+)/)||[])[1]||"application/octet-stream";const bin=atob(b);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return URL.createObjectURL(new Blob([arr],{type:mime}));}
+// Karya HTML dijalankan di iframe sandbox TANPA allow-same-origin: tidak bisa menyentuh login/data situs.
+const SANDBOX="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
+function renderBerkasInto(el,d,full){
+  el.innerHTML="";
+  if(d.tipe==="html"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.setAttribute("sandbox",SANDBOX);f.setAttribute("allow","fullscreen; autoplay");f.title=d.nama||"Karya";f.srcdoc=d.isi;el.appendChild(f);}
+  else if(d.tipe==="image"){const i=document.createElement("img");i.className="karya-img";i.alt=d.nama||"Karya";i.src=d.isi;el.appendChild(i);}
+  else if(d.tipe==="pdf"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.title=d.nama||"PDF";f.src=dataUrlToBlobUrl(d.isi);el.appendChild(f);}
+}
+async function showBerkas(p,k,inModal){
+  p.classList.add("has-frame");
+  p.innerHTML=`<div style="display:grid;place-items:center;min-height:300px;color:var(--muted)">⏳ Memuat karya…</div>`;
+  if(!db){p.innerHTML=`<div style="padding:28px">Berkas hanya bisa dibuka saat situs tersambung ke Firebase.</div>`;return;}
+  try{
+    const d=await loadBerkas(k.id); if(cur!==k&&inModal)return;
+    const box=document.createElement("div");renderBerkasInto(box,d,false);
+    const bar=document.createElement("div");bar.className="frame-bar";
+    bar.innerHTML=`<a class="mini" href="${esc(playLink(k))}" target="_blank" rel="noopener">⛶ Layar penuh</a>`;
+    p.innerHTML="";p.style.display="block";p.appendChild(box);p.appendChild(bar);
+  }catch(err){p.classList.remove("has-frame");p.style.display="";p.innerHTML=`<div style="padding:28px">⚠️ Karya tidak bisa dimuat. ${esc(err.message||"")}</div>`;}
+}
+let qrLib=null;
+function drawQR(box,url,seed){
+  const fallback=()=>{box.innerHTML=`<div style="width:200px;height:120px;display:grid;place-items:center;color:#888;font-size:.85rem;text-align:center">QR Code tidak bisa dibuat (cek koneksi).<br>Bagikan tautan di bawah.</div>`;};
+  const draw=()=>{try{box.innerHTML="";new QRCode(box,{text:url,width:200,height:200,correctLevel:QRCode.CorrectLevel.M});}catch{fallback();}};
+  if(window.QRCode)return draw();
+  qrLib=qrLib||new Promise((ok,no)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";sc.onload=ok;sc.onerror=no;document.head.appendChild(sc);});
+  box.innerHTML='<div style="width:200px;height:200px;display:grid;place-items:center;color:#888">Membuat QR…</div>';
+  qrLib.then(draw,()=>{qrLib=null;fallback();});
 }
 function fakeQR(seed){
   let h=7;for(const c of seed)h=(h*31+c.charCodeAt(0))>>>0;
@@ -931,7 +1018,7 @@ document.addEventListener("click",e=>{const g=e.target.closest("[data-go]");if(g
 
 function rowHTML(k){
   return `<div class="row"><span class="ic" style="background:${k.warna}">${esc(k.ikon)}</span>
-    <div class="meta"><b>${esc(k.judul)}</b><small>${esc(k.mapel)} · ${TIPE[k.tipe]}${k.tgl?" · "+esc(k.tgl):""}</small></div>
+    <div class="meta"><b>${esc(k.judul)}</b><small>${esc(k.mapel)} · ${TIPE[k.tipe]}${k.tgl?" · "+esc(k.tgl):""}${k.berkas?" · 📎 "+esc(k.berkas.nama):""}</small></div>
     <div class="acts">
       <button class="mini ${k.unggulan?"star-on":""}" data-star="${esc(k.id)}" title="Unggulan">★</button>
       <button class="mini" data-edit="${esc(k.id)}">✏️ Ubah</button>
@@ -960,7 +1047,7 @@ $("#admin").addEventListener("click",async e=>{
   if(ed){editId=ed.dataset.edit;fillForm(KARYA.find(x=>x.id===editId));showAdView("form");}
   if(dl){const k=KARYA.find(x=>x.id===dl.dataset.del);if(!k)return;
     if(await askConfirm(`"${k.judul}" akan dihapus dari situs. Tindakan ini tidak bisa dibatalkan.`)){
-      try{await db.collection("karya").doc(k.id).delete();toast("🗑️ Karya dihapus");}catch(err){failWrite(err);}}}
+      try{await db.collection("karya").doc(k.id).delete();if(k.berkas){await db.doc("berkas/"+k.id).delete();delete BERKAS_CACHE[k.id];}toast("🗑️ Karya dihapus");}catch(err){failWrite(err);}}}
 });
 
 /* confirm dialog */
@@ -985,20 +1072,62 @@ $("#kWarna").onclick=e=>{const b=e.target.closest("[data-c]");if(!b)return;form.
 function syncPick(){$$("#kIkon button").forEach(b=>b.classList.toggle("on",b.dataset.e===form.ikon));$$("#kWarna button").forEach(b=>b.classList.toggle("on",b.dataset.c===form.warna));}
 const FIELDS={judul:"#kJudul",desk:"#kDesk",mapel:"#kMapel",tipe:"#kTipe",link:"#kLink",video:"#kVideo",demo:"#kDemo",durasi:"#kDurasi",tgl:"#kTgl"};
 function readForm(){const d={};for(const[k,s]of Object.entries(FIELDS))d[k]=$(s).value.trim();d.unggulan=$("#kUnggul").checked;d.ikon=form.ikon;d.warna=form.warna;return d;}
+/* unggah berkas */
+function renderDrop(){
+  const b=form.file||form.berkasLama;
+  $("#kDrop").innerHTML=b?`<div class="file-chip"><span class="fi">${{html:"🌐",pdf:"📄",image:"🖼️"}[b.tipe]}</span><span class="fm"><b>${esc(b.nama)}</b><small>${BERKAS_TIPE[b.tipe]} · ${fmtSize(b.ukuran)}${form.file?" · siap diunggah":" · tersimpan"}</small></span><button type="button" class="mini" data-act="ganti">Ganti</button><button type="button" class="mini danger" data-act="hapus">Hapus</button></div>`
+    :`<div style="font-size:1.8rem">📤</div><b>Seret file ke sini</b> atau <span style="color:var(--blue);font-weight:700">pilih file</span><br><small>HTML maks ${fmtSize(MAX_HTML)} · PDF/gambar maks ${fmtSize(MAX_DATAURL*3/4)} (gambar besar dikecilkan otomatis)</small>`;
+}
+function fileErr(msg){const e=$("#kFileErr");e.textContent=msg||"";e.style.display=msg?"block":"none";}
+const readAs=(f,how)=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(r.error);r[how](f);});
+async function shrinkImage(f){
+  const url=URL.createObjectURL(f);
+  try{const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=url;});
+    for(const [max,q] of [[1600,.85],[1280,.8],[1024,.75],[800,.7]]){
+      const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);const out=c.toDataURL("image/jpeg",q);if(out.length<=MAX_DATAURL)return out;}
+    return null;}finally{URL.revokeObjectURL(url);}
+}
+async function takeFile(f){
+  fileErr("");if(!f)return;
+  const name=f.name||"berkas", ext=(name.split(".").pop()||"").toLowerCase();
+  const tipe=/^html?$/.test(ext)||f.type==="text/html"?"html":ext==="pdf"||f.type==="application/pdf"?"pdf":f.type.startsWith("image/")?"image":null;
+  if(!tipe)return fileErr("Format tidak didukung. Gunakan .html, .pdf, atau gambar (.jpg/.png/.gif/.webp).");
+  $("#kDrop").innerHTML="⏳ Membaca file…";
+  try{
+    let isi;
+    if(tipe==="html"){isi=await readAs(f,"readAsText");if(new Blob([isi]).size>MAX_HTML){renderDrop();return fileErr(`File HTML terlalu besar (${fmtSize(f.size)}). Maksimal ${fmtSize(MAX_HTML)}. Kecilkan gambar di dalamnya atau pisahkan karya.`);}}
+    else{isi=await readAs(f,"readAsDataURL");
+      if(isi.length>MAX_DATAURL){
+        if(tipe==="image"&&!/gif|svg/.test(f.type)){isi=await shrinkImage(f);if(!isi){renderDrop();return fileErr("Gambar terlalu besar bahkan setelah dikecilkan.");}}
+        else{renderDrop();return fileErr(`File terlalu besar (${fmtSize(f.size)}). Maksimal sekitar ${fmtSize(MAX_DATAURL*3/4)}.`);}}}
+    form.file={nama:name.slice(0,100),tipe,ukuran:new Blob([isi]).size,isi};form.hapusBerkas=false;
+    $("#kForm").dataset.dirty="1";renderDrop();
+  }catch{renderDrop();fileErr("File tidak bisa dibaca.");}
+}
+$("#kDrop").addEventListener("click",e=>{const a=e.target.closest("[data-act]");
+  if(a&&a.dataset.act==="hapus"){e.stopPropagation();if(form.file)form.file=null;else if(form.berkasLama){form.berkasLama=null;form.hapusBerkas=true;}$("#kForm").dataset.dirty="1";fileErr("");renderDrop();return;}
+  $("#kFile").click();});
+$("#kDrop").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#kFile").click();}});
+$("#kFile").onchange=e=>{takeFile(e.target.files[0]);e.target.value="";};
+["dragenter","dragover"].forEach(ev=>$("#kDrop").addEventListener(ev,e=>{e.preventDefault();$("#kDrop").classList.add("over");}));
+["dragleave","drop"].forEach(ev=>$("#kDrop").addEventListener(ev,e=>{e.preventDefault();$("#kDrop").classList.remove("over");}));
+$("#kDrop").addEventListener("drop",e=>takeFile(e.dataTransfer.files[0]));
+
 function resetForm(){
-  editId=null;$("#kForm").reset();$("#kForm").dataset.dirty="";form={ikon:EMOJIS[0],warna:COLORS[0]};$("#kTgl").value=today();
+  editId=null;$("#kForm").reset();$("#kForm").dataset.dirty="";form={ikon:EMOJIS[0],warna:COLORS[0],file:null,berkasLama:null,hapusBerkas:false};$("#kTgl").value=today();fileErr("");renderDrop();
   $("#formTitle").textContent="Tambah karya";$("#formSub").textContent="Isi data, lihat pratinjaunya di kanan, lalu simpan.";
   $$("#kForm .fld").forEach(f=>f.classList.remove("bad"));syncPick();preview();
 }
 function fillForm(k){
   if(!k)return resetForm();
   for(const[f,s]of Object.entries(FIELDS))$(s).value=k[f]||"";
-  $("#kUnggul").checked=k.unggulan;form={ikon:k.ikon,warna:k.warna};
+  $("#kUnggul").checked=k.unggulan;form={ikon:k.ikon,warna:k.warna,file:null,berkasLama:k.berkas,hapusBerkas:false};fileErr("");renderDrop();
   if(!EMOJIS.includes(k.ikon))$("#kIkon").insertAdjacentHTML("afterbegin",`<button type="button" data-e="${esc(k.ikon)}">${esc(k.ikon)}</button>`);
   $("#formTitle").textContent="Ubah karya";$("#formSub").textContent="Perubahan langsung tampil di situs setelah disimpan.";
   $$("#kForm .fld").forEach(f=>f.classList.remove("bad"));syncPick();preview();
 }
-function preview(){const d=clean("preview",readForm());$("#kPrev").innerHTML=cardHTML(d,0,false);$("#deskCount").textContent=$("#kDesk").value.length+"/220";}
+function preview(){const f=form.file||form.berkasLama;const d=clean("preview",{...readForm(),berkas:f?{nama:f.nama,tipe:f.tipe,ukuran:f.ukuran}:null});$("#kPrev").innerHTML=cardHTML(d,0,false);$("#deskCount").textContent=$("#kDesk").value.length+"/220";}
 $("#kForm").addEventListener("input",()=>{$("#kForm").dataset.dirty="1";preview();});
 $("#kCancel").onclick=()=>{resetForm();showAdView("karya");};
 function validate(d){
@@ -1011,9 +1140,14 @@ $("#kForm").onsubmit=async e=>{
   e.preventDefault();const d=readForm();
   if(!validate(d)){toast("Periksa kolom yang ditandai merah");$("#kForm .bad input, #kForm .bad textarea")?.focus();return;}
   const ref=editId?db.collection("karya").doc(editId):db.collection("karya").doc();
-  const body={...d,tgl:d.tgl||today()};
-  $("#kSave").classList.add("saving");$("#kSave").textContent="Menyimpan…";
-  try{await ref.set(body);toast(editId?"✅ Perubahan disimpan":"✅ Karya ditambahkan");resetForm();showAdView("karya");}
+  const f=form.file, meta=f?{nama:f.nama,tipe:f.tipe,ukuran:f.ukuran}:(form.hapusBerkas?null:form.berkasLama||null);
+  const body={...d,tgl:d.tgl||today(),berkas:meta};
+  $("#kSave").classList.add("saving");$("#kSave").textContent=f?"Mengunggah berkas…":"Menyimpan…";
+  try{
+    if(f){await db.doc("berkas/"+ref.id).set({nama:f.nama,tipe:f.tipe,ukuran:f.ukuran,isi:f.isi});BERKAS_CACHE[ref.id]={nama:f.nama,tipe:f.tipe,isi:f.isi};}
+    else if(form.hapusBerkas&&editId){await db.doc("berkas/"+ref.id).delete();delete BERKAS_CACHE[ref.id];}
+    $("#kSave").textContent="Menyimpan…";
+    await ref.set(body);toast(editId?"✅ Perubahan disimpan":"✅ Karya ditambahkan");resetForm();showAdView("karya");}
   catch(err){failWrite(err);}
   finally{$("#kSave").classList.remove("saving");$("#kSave").textContent="💾 Simpan";}
 };
@@ -1061,7 +1195,7 @@ window.startApp=function(backend,why="",detail=""){
   if(!backend){
     KARYA=SAMPLE.map(k=>clean(k.id,k));MODE="demo";AUTH_READY=true;
     setNote("ℹ️ Mode contoh (data contoh). "+why);
-    renderSite();renderAdmin();return;
+    renderSite();renderAdmin();startPlay();return;
   }
   db=backend.db;
   backend.auth.onChange(u=>{AUTH_USER=u;AUTH_READY=true;CAN_EDIT=!!u&&backend.isAdmin(u);renderAdmin();});
@@ -1070,11 +1204,28 @@ window.startApp=function(backend,why="",detail=""){
   db.collection("karya").onSnapshot(snap=>{
     KARYA=snap.docs.map(d=>clean(d.id,d.data()||{}));
     if(!snap.metadata.fromCache){got=true;clearTimeout(timer);setNote("");}
-    MODE="live";renderSite();if(document.body.classList.contains("route-admin")&&adView!=="form")renderAdmin();
+    MODE="live";renderSite();startPlay();if(document.body.classList.contains("route-admin")&&adView!=="form")renderAdmin();
   },err=>{clearTimeout(timer);MODE="live";setNote("⚠️ Data tidak bisa dimuat. Periksa firestore.rules dan firebase-config.js.");renderSite();});
   db.doc("site/profil").onSnapshot(snap=>{PROFIL=snap.exists?{...DEFAULT_PROFIL,...snap.data()}:{...DEFAULT_PROFIL};renderProfil();},()=>{});
 };
 renderSite();route();
+
+/* pemutar layar penuh: ?karya=ID */
+const PLAY_ID=new URLSearchParams(location.search).get("karya");
+if(PLAY_ID){document.body.classList.add("route-play");$("#playCopy").onclick=()=>copyText(location.href,"🔗 Tautan disalin!");}
+let played=false;
+async function startPlay(){
+  if(!PLAY_ID||played)return;
+  const k=KARYA.find(x=>x.id===PLAY_ID);
+  if(!k){if(MODE!=="loading"){$("#playTitle").textContent="Karya tidak ditemukan";$("#playBody").innerHTML=`<p>Karya ini mungkin sudah dihapus. <a href="./">Lihat karya lain</a></p>`;}return;}
+  played=true;document.title=k.judul+" — Media Interaktif";$("#playTitle").textContent=k.ikon+" "+k.judul;
+  const body=$("#playBody");
+  if(k.berkas&&db){body.innerHTML=`<p style="color:var(--muted)">⏳ Memuat karya…</p>`;
+    try{const d=await loadBerkas(k.id);renderBerkasInto(body,d,true);if(d.tipe==="pdf"){body.insertAdjacentHTML("beforeend","");}}
+    catch(err){body.innerHTML=`<p>⚠️ Karya tidak bisa dimuat. ${esc(err.message||"")}</p>`;}}
+  else if(okUrl(k.link)){body.innerHTML=`<a class="btn btn-primary" href="${esc(k.link)}">🚀 Buka karya</a>`;}
+  else{cur=k;body.innerHTML=`<div style="width:100%;max-width:520px;padding:24px">${labHTML(k.demo)}</div>`;initLab(k.demo);}
+}
 </script>
 
 <script type="module">
