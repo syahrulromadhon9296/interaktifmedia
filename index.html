@@ -360,6 +360,20 @@
   .play-body iframe{width:100%;height:100%;border:0;background:#fff}
   .qr-real{background:#fff;padding:14px;border-radius:14px;display:inline-block;box-shadow:var(--shadow)}
   .qr-real img,.qr-real canvas{display:block}
+
+  /* ===== CUPLIKAN ===== */
+  .thumb.has-shot>span:first-child{display:none}
+  .thumb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .thumb-live{position:absolute;inset:0;overflow:hidden;background:#fff}
+  .thumb-live iframe{width:400%;height:400%;transform:scale(.25);transform-origin:0 0;border:0;pointer-events:none}
+  .thumb .type,.thumb .star,.thumb .new{z-index:2}
+  .thumb.has-shot::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.18),transparent 40%);pointer-events:none;z-index:1}
+  .card:hover .thumb-img{transform:scale(1.04)}
+  .thumb-img{transition:transform .4s}
+  .shot-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .shot-box{width:160px;height:100px;border-radius:12px;border:2px dashed var(--line);background:var(--bg) center/cover no-repeat;display:grid;place-items:center;color:var(--muted);font-size:.8rem;text-align:center;cursor:pointer;flex:none}
+  .frame-err{padding:10px 12px;background:color-mix(in srgb,var(--pink) 12%,var(--card));color:var(--ink);font-size:.82rem;text-align:left;border-top:1px solid var(--line)}
+  .frame-err b{color:var(--pink)}
 </style>
 </head>
 <body>
@@ -650,9 +664,14 @@
               <div class="fld full"><label>Warna latar</label><div class="swatches" id="kWarna"></div></div>
               <div class="fld full"><label>Berkas karya <small style="font-weight:500">(opsional)</small></label>
                 <div class="drop" id="kDrop" tabindex="0" role="button" aria-label="Pilih berkas karya"></div>
-                <input type="file" id="kFile" accept=".html,.htm,.pdf,image/*" hidden>
-                <small>File HTML tunggal (CSS &amp; JS di dalamnya), PDF, atau gambar. Siswa bisa langsung mencobanya di situs.</small>
+                <input type="file" id="kFile" accept=".html,.htm,.pdf,.zip,image/*" hidden><input type="file" id="kDir" webkitdirectory directory multiple hidden>
+                <small>Satu <b>folder</b> karya (index.html + CSS, JS, gambar, suara…), file <b>ZIP</b>, satu file HTML, PDF, atau gambar. Siswa bisa langsung mencobanya di situs.</small>
                 <span class="err" id="kFileErr" style="display:none"></span></div>
+              <div class="fld full"><label>Gambar cuplikan <small style="font-weight:500">(opsional)</small></label>
+                <div class="shot-row"><div class="shot-box" id="kShot" tabindex="0" role="button" aria-label="Pilih gambar cuplikan">📷<br>Pilih gambar</div>
+                  <div><small>Tampil di kartu karya. Kosongkan untuk cuplikan otomatis:<br>berkas HTML → tampilan langsung, berkas gambar → gambar itu sendiri.</small><br>
+                  <button type="button" class="mini" id="kShotDel" hidden>Hapus cuplikan</button></div></div>
+                <input type="file" id="kShotFile" accept="image/*" hidden></div>
               <div class="fld"><label for="kLink">Tautan karya</label><input type="url" id="kLink" placeholder="https://…"><small>Opsional bila karya ada di situs lain.</small><span class="err">Harus diawali https://</span></div>
               <div class="fld"><label for="kVideo">Tautan video demo</label><input type="url" id="kVideo" placeholder="https://youtube.com/…"><span class="err">Harus diawali https://</span></div>
               <div class="fld"><label for="kDemo">Demo bawaan</label><select id="kDemo"><option value="umum">— Tidak ada —</option><option value="ohm">⚡ Hukum Ohm</option><option value="rgb">🎨 Warna RGB</option><option value="logika">💡 Gerbang logika</option><option value="subnet">🌐 Subnet</option><option value="kuis">🧩 Kuis HTML</option></select><small>Simulasi kecil di tab "Coba langsung".</small></div>
@@ -729,7 +748,7 @@ const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">
 const okUrl = u => /^https?:\/\/\S+$/i.test(u||"");
 const isNew = k => k.tgl && (Date.now()-new Date(k.tgl))/864e5 < 30;
 const pageLink = () => location.href.split("#")[0] + "#karya";
-const BERKAS_TIPE={html:"🌐 HTML",pdf:"📄 PDF",image:"🖼️ Gambar"};
+const BERKAS_TIPE={html:"🌐 HTML",pdf:"📄 PDF",image:"🖼️ Gambar",folder:"📁 Folder"};
 const MAX_HTML=900000, MAX_DATAURL=950000; // batas 1 dokumen Firestore ±1 MB
 const playLink = k => location.href.split("#")[0].split("?")[0] + "?karya=" + encodeURIComponent(k.id);
 const linkOf = k => !k ? pageLink() : k.berkas ? playLink(k) : okUrl(k.link) ? k.link : pageLink();
@@ -744,6 +763,7 @@ function clean(id, d){
     tipe:TIPE[d.tipe]?d.tipe:"lab", ikon:s(d.ikon,8)||"📦", warna:/^#[0-9a-f]{6}$/i.test(d.warna)?d.warna:"#e8edf8",
     unggulan:!!d.unggulan, tgl:/^\d{4}-\d{2}-\d{2}$/.test(d.tgl)?d.tgl:"", demo:DEMOS.includes(d.demo)?d.demo:"umum",
     durasi:s(d.durasi,8), link:okUrl(d.link)?d.link:"", video:okUrl(d.video)?d.video:"",
+    cuplikan:(typeof d.cuplikan==="string"&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(d.cuplikan)&&d.cuplikan.length<=200000)?d.cuplikan:"",
     berkas:(d.berkas&&BERKAS_TIPE[d.berkas.tipe])?{nama:s(d.berkas.nama,100)||"berkas",tipe:d.berkas.tipe,ukuran:+d.berkas.ukuran||0}:null};
 }
 
@@ -801,10 +821,11 @@ function sorted(list,how){
   if(how==="feat")l.sort((a,b)=>(b.unggulan-a.unggulan)||(b.tgl||"").localeCompare(a.tgl||""));
   return l;
 }
+const liveOK=k=>!!k.berkas&&(k.berkas.tipe==="html"||(k.berkas.tipe==="folder"&&k.berkas.ukuran<=3000000));
 function cardHTML(k,i=0,actions=true){
   return `<article class="card" style="animation-delay:${i*40}ms">
-      <div class="thumb" style="background:${k.warna}" ${actions?`data-id="${esc(k.id)}" title="Coba ${esc(k.judul)}"`:""}>
-        <span>${esc(k.ikon)}</span><span class="type">${TIPE[k.tipe]}</span>
+      <div class="thumb ${k.cuplikan||liveOK(k)?"has-shot":""}" style="background:${k.warna}" ${actions?`data-id="${esc(k.id)}" title="Coba ${esc(k.judul)}"`:""}>
+        <span>${esc(k.ikon)}</span>${k.cuplikan?`<img class="thumb-img" src="${k.cuplikan}" alt="" loading="lazy">`:liveOK(k)?`<div class="thumb-live" data-live="${esc(k.id)}"></div>`:""}<span class="type">${TIPE[k.tipe]}</span>
         ${k.unggulan?'<span class="star">★ Unggulan</span>':''}${isNew(k)?'<span class="new">BARU</span>':''}
       </div>
       <div class="card-body">
@@ -831,6 +852,17 @@ function render(){
   $("#empty").querySelector("p").innerHTML=none?"<b>Belum ada karya.</b><br>Admin bisa menambahkannya lewat dashboard.":"<b>Belum ada karya yang cocok.</b><br>Coba kata kunci lain atau hapus filter.";
   $("#resetF").style.display=none?"none":"";
   $("#empty").style.display=list.length?"none":"block";
+  hydrateLive($("#daftar-karya"));
+}
+/* cuplikan langsung untuk berkas HTML: dimuat saat kartu terlihat */
+const liveIO="IntersectionObserver" in window?new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){liveIO.unobserve(e.target);fillLive(e.target);}}),{rootMargin:"200px"}):null;
+function hydrateLive(root){root.querySelectorAll("[data-live]:not([data-done])").forEach(el=>{el.dataset.done="1";liveIO?liveIO.observe(el):fillLive(el);});}
+async function fillLive(el,isi,bundle){
+  try{
+    if(isi==null&&!bundle){if(!db)return;const d=await loadBerkas(el.dataset.live);if(d.tipe==="html")isi=d.isi;else if(d.tipe==="folder")bundle=d.bundle;else return;}
+    const f=document.createElement("iframe");f.setAttribute("sandbox","allow-scripts");f.setAttribute("tabindex","-1");f.setAttribute("aria-hidden","true");f.setAttribute("loading","lazy");
+    f.srcdoc=bundle?buildFolderPage(bundle,bundle.entry,false):prepHTML(isi,false);el.innerHTML="";el.appendChild(f);
+  }catch{el.remove();}
 }
 $("#daftar-karya").addEventListener("click",e=>{
   const s=e.target.closest("[data-share]"); if(s){copyText(linkOf(KARYA.find(k=>k.id===s.dataset.share)),"🔗 Tautan disalin!");return;}
@@ -845,7 +877,7 @@ function showPreview(){
   if(!feat.length){$("#pvIcon").textContent="✨";$("#pvTitle").textContent=MODE==="loading"?"Memuat…":"Segera hadir";$("#pvDesc").textContent=MODE==="loading"?"":"Karya pertama sedang disiapkan.";$("#pvBtn").hidden=true;$("#pvDots").innerHTML="";return;}
   const i=fi%feat.length,k=feat[i];
   if($("#pvDots").children.length!==feat.length)$("#pvDots").innerHTML=feat.map(()=>"<i></i>").join("");
-  $("#pvBtn").hidden=false;$("#pvIcon").textContent=k.ikon;$("#pvScreen").style.background=k.warna;$("#pvTitle").textContent=k.judul;$("#pvDesc").textContent=k.desk;$("#pvBtn").dataset.id=k.id;
+  $("#pvBtn").hidden=false;$("#pvIcon").textContent=k.cuplikan?"":k.ikon;$("#pvScreen").style.background=k.cuplikan?`center/cover no-repeat url("${k.cuplikan}")`:k.warna;$("#pvTitle").textContent=k.judul;$("#pvDesc").textContent=k.desk;$("#pvBtn").dataset.id=k.id;
   $$("#pvDots i").forEach((d,j)=>d.classList.toggle("on",j===i));fi++;
 }
 setInterval(showPreview,4500);
@@ -905,16 +937,58 @@ async function loadBerkas(id){
   if(BERKAS_CACHE[id])return BERKAS_CACHE[id];
   const snap=await db.doc("berkas/"+id).get();
   if(!snap.exists)throw new Error("Berkas tidak ditemukan");
-  const d=snap.data()||{};
+  const d={...(snap.data()||{})};
+  if(d.tipe==="folder"){
+    const n=+d.bagian||0;if(!n)throw new Error("Berkas folder kosong");
+    const parts=await Promise.all([...Array(n)].map((_,i)=>db.doc(`berkas/${id}/bagian/${i}`).get()));
+    if(parts.some(x=>!x.exists))throw new Error("Sebagian berkas folder hilang. Unggah ulang foldernya.");
+    try{d.bundle=JSON.parse(parts.map(x=>x.data().isi).join(""));}catch{throw new Error("Berkas folder rusak. Unggah ulang foldernya.");}
+    if(!d.bundle||!d.bundle.files||!d.bundle.files[d.bundle.entry])throw new Error("Halaman utama folder tidak ditemukan");
+    return BERKAS_CACHE[id]=d;
+  }
   if(typeof d.isi!=="string"||!BERKAS_TIPE[d.tipe])throw new Error("Berkas rusak");
   return BERKAS_CACHE[id]=d;
 }
 function dataUrlToBlobUrl(u){const[h,b]=u.split(",");const mime=(h.match(/data:([^;]+)/)||[])[1]||"application/octet-stream";const bin=atob(b);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return URL.createObjectURL(new Blob([arr],{type:mime}));}
 // Karya HTML dijalankan di iframe sandbox TANPA allow-same-origin: tidak bisa menyentuh login/data situs.
 const SANDBOX="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
+/* Lapisan kompatibilitas untuk karya HTML di dalam sandbox:
+   - localStorage/sessionStorage diganti penyimpanan sementara (aslinya diblokir sandbox → karya macet)
+   - error & file yang hilang dilaporkan ke halaman induk agar admin tahu penyebabnya */
+const SHIM_JS=`(function(){function mk(){var d={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[k]=String(v)},removeItem:function(k){delete d[k]},clear:function(){d={}},key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(d).length}}}
+['localStorage','sessionStorage'].forEach(function(n){try{window[n].getItem('x')}catch(e){try{Object.defineProperty(window,n,{value:mk(),configurable:true})}catch(_){}}});
+try{document.cookie}catch(e){var ck='';try{Object.defineProperty(document,'cookie',{get:function(){return ck},set:function(v){ck=(ck?ck+'; ':'')+String(v).split(';')[0]},configurable:true})}catch(_){}}
+var R=window.__MI_REPORT;function send(t,m){try{parent.postMessage({__mi:1,t:t,m:String(m).slice(0,300)},'*')}catch(_){}}
+if(R){window.addEventListener('error',function(e){var el=e.target;if(el&&el!==window&&(el.src||el.href)){send('file',el.getAttribute('src')||el.getAttribute('href'))}else{send('js',(e.message||'Error')+(e.lineno?' (baris '+e.lineno+')':''))}},true);
+window.addEventListener('unhandledrejection',function(e){send('js',e.reason&&e.reason.message||e.reason)});}})();`;
+function prepHTML(isi,report=true){
+  const tag=`<script>window.__MI_REPORT=${report?1:0};${SHIM_JS}<\/script>`;
+  const m=isi.match(/<head[^>]*>/i)||isi.match(/<html[^>]*>/i);
+  if(m){const i=m.index+m[0].length;return isi.slice(0,i)+tag+isi.slice(i);}
+  return tag+isi;
+}
+const FRAME_ERRS=new Map(); // iframe.contentWindow -> {box, errs:Set}
+addEventListener("message",e=>{
+  const d=e.data;if(!d||d.__mi!==1)return;
+  for(const [win,st] of FRAME_ERRS){if(win===e.source){
+    if(d.t==="nav"){if(st.nav)st.nav(String(d.m));return;}
+    const msg=st.nav&&d.t==="file"?`File tidak ditemukan di folder: <b>${esc(d.m)}</b> — periksa nama & huruf besar/kecilnya.`:d.t==="file"?`File tidak ditemukan: <b>${esc(d.m)}</b> — karya bergantung pada file terpisah. Gabungkan CSS/JS/gambar ke dalam satu file HTML.`:`Error di karya: ${esc(d.m)}`;
+    if(st.errs.has(msg)||st.errs.size>=4)return;st.errs.add(msg);
+    st.box.hidden=false;st.box.innerHTML="⚠️ <b>Karya mengalami masalah</b><br>"+[...st.errs].join("<br>");return;}}
+});
+function watchFrame(f,box){for(const [w,st] of FRAME_ERRS)if(!w||w.closed||st.box===box||!document.contains(st.box))FRAME_ERRS.delete(w);FRAME_ERRS.set(f.contentWindow,{box,errs:new Set()});}
 function renderBerkasInto(el,d,full){
   el.innerHTML="";
-  if(d.tipe==="html"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.setAttribute("sandbox",SANDBOX);f.setAttribute("allow","fullscreen; autoplay");f.title=d.nama||"Karya";f.srcdoc=d.isi;el.appendChild(f);}
+  if(d.tipe==="html"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.setAttribute("sandbox",SANDBOX);f.setAttribute("allow","fullscreen; autoplay");f.title=d.nama||"Karya";
+    const eb=document.createElement("div");eb.className="frame-err";eb.hidden=true;
+    el.appendChild(f);el.appendChild(eb);watchFrame(f,eb);f.srcdoc=prepHTML(d.isi,true);
+    if(full){el.style.display="flex";el.style.flexDirection="column";f.style.flex="1";}}
+  else if(d.tipe==="folder"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.setAttribute("sandbox",SANDBOX);f.setAttribute("allow","fullscreen; autoplay");f.title=d.nama||"Karya";
+    const eb=document.createElement("div");eb.className="frame-err";eb.hidden=true;
+    el.appendChild(f);el.appendChild(eb);watchFrame(f,eb);
+    const go=page=>{const st=FRAME_ERRS.get(f.contentWindow);if(st){st.errs.clear();eb.hidden=true;}f.srcdoc=buildFolderPage(d.bundle,page,true);};
+    FRAME_ERRS.get(f.contentWindow).nav=go;go(d.bundle.entry);
+    if(full){el.style.display="flex";el.style.flexDirection="column";f.style.flex="1";}}
   else if(d.tipe==="image"){const i=document.createElement("img");i.className="karya-img";i.alt=d.nama||"Karya";i.src=d.isi;el.appendChild(i);}
   else if(d.tipe==="pdf"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.title=d.nama||"PDF";f.src=dataUrlToBlobUrl(d.isi);el.appendChild(f);}
 }
@@ -924,10 +998,10 @@ async function showBerkas(p,k,inModal){
   if(!db){p.innerHTML=`<div style="padding:28px">Berkas hanya bisa dibuka saat situs tersambung ke Firebase.</div>`;return;}
   try{
     const d=await loadBerkas(k.id); if(cur!==k&&inModal)return;
-    const box=document.createElement("div");renderBerkasInto(box,d,false);
+    const box=document.createElement("div");
     const bar=document.createElement("div");bar.className="frame-bar";
     bar.innerHTML=`<a class="mini" href="${esc(playLink(k))}" target="_blank" rel="noopener">⛶ Layar penuh</a>`;
-    p.innerHTML="";p.style.display="block";p.appendChild(box);p.appendChild(bar);
+    p.innerHTML="";p.style.display="block";p.appendChild(box);p.appendChild(bar);renderBerkasInto(box,d,false);
   }catch(err){p.classList.remove("has-frame");p.style.display="";p.innerHTML=`<div style="padding:28px">⚠️ Karya tidak bisa dimuat. ${esc(err.message||"")}</div>`;}
 }
 let qrLib=null;
@@ -1047,7 +1121,7 @@ $("#admin").addEventListener("click",async e=>{
   if(ed){editId=ed.dataset.edit;fillForm(KARYA.find(x=>x.id===editId));showAdView("form");}
   if(dl){const k=KARYA.find(x=>x.id===dl.dataset.del);if(!k)return;
     if(await askConfirm(`"${k.judul}" akan dihapus dari situs. Tindakan ini tidak bisa dibatalkan.`)){
-      try{await db.collection("karya").doc(k.id).delete();if(k.berkas){await db.doc("berkas/"+k.id).delete();delete BERKAS_CACHE[k.id];}toast("🗑️ Karya dihapus");}catch(err){failWrite(err);}}}
+      try{await db.collection("karya").doc(k.id).delete();if(k.berkas){await deleteBerkas(k.id);}toast("🗑️ Karya dihapus");}catch(err){failWrite(err);}}}
 });
 
 /* confirm dialog */
@@ -1072,11 +1146,169 @@ $("#kWarna").onclick=e=>{const b=e.target.closest("[data-c]");if(!b)return;form.
 function syncPick(){$$("#kIkon button").forEach(b=>b.classList.toggle("on",b.dataset.e===form.ikon));$$("#kWarna button").forEach(b=>b.classList.toggle("on",b.dataset.c===form.warna));}
 const FIELDS={judul:"#kJudul",desk:"#kDesk",mapel:"#kMapel",tipe:"#kTipe",link:"#kLink",video:"#kVideo",demo:"#kDemo",durasi:"#kDurasi",tgl:"#kTgl"};
 function readForm(){const d={};for(const[k,s]of Object.entries(FIELDS))d[k]=$(s).value.trim();d.unggulan=$("#kUnggul").checked;d.ikon=form.ikon;d.warna=form.warna;return d;}
+/* ================= KARYA SATU FOLDER ================= */
+// Folder (index.html + aset) disimpan sebagai satu "bundle" JSON yang dipecah ke beberapa dokumen
+// Firestore (berkas/{id}/bagian/{n}), lalu dirakit kembali di browser saat karya dibuka.
+const MAX_FOLDER=15000000, CHUNK=900000, MAX_FILES=1000;
+const TEXT_EXT=/^(html?|css|m?js|json|txt|svg|csv|xml|md|map|webmanifest|glsl|frag|vert|tsv)$/i;
+const MIME={html:"text/html",htm:"text/html",css:"text/css",js:"text/javascript",mjs:"text/javascript",json:"application/json",txt:"text/plain",csv:"text/csv",tsv:"text/tab-separated-values",xml:"application/xml",svg:"image/svg+xml",md:"text/markdown",
+  png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",webp:"image/webp",bmp:"image/bmp",ico:"image/x-icon",avif:"image/avif",
+  mp3:"audio/mpeg",wav:"audio/wav",ogg:"audio/ogg",m4a:"audio/mp4",aac:"audio/aac",mp4:"video/mp4",webm:"video/webm",ogv:"video/ogg",
+  woff:"font/woff",woff2:"font/woff2",ttf:"font/ttf",otf:"font/otf",pdf:"application/pdf",wasm:"application/wasm"};
+const extOf=p=>(p.split("/").pop().split(".").pop()||"").toLowerCase();
+const isJunk=p=>p.split("/").some(s=>!s||s.startsWith(".")||s==="__MACOSX"||s==="node_modules")||/^(thumbs\.db|desktop\.ini)$/i.test(p.split("/").pop());
+function fileDataURL(f){return f.t==="b64"?`data:${f.m};base64,${f.d}`:`data:${f.m};charset=utf-8,${encodeURIComponent(f.d)}`;}
+function lookupKey(files,base,u){
+  if(u==null)return null;u=String(u).trim();
+  if(!u||/^(data:|blob:|https?:|\/\/|#|mailto:|tel:|javascript:|about:)/i.test(u))return null;
+  let p=u.split("#")[0].split("?")[0];if(!p)return null;try{p=decodeURIComponent(p);}catch{}
+  const segs=(p.startsWith("/")?[]:base.split("/").filter(Boolean)).concat(p.split("/"));const out=[];
+  for(const s of segs){if(s==="..")out.pop();else if(s&&s!==".")out.push(s);}
+  const k=out.join("/");if(files[k])return k;
+  const lk=k.toLowerCase();for(const x in files)if(x.toLowerCase()===lk)return x;return null;
+}
+const dirOf=p=>p.includes("/")?p.slice(0,p.lastIndexOf("/")+1):"";
+
+/* ---- merakit satu halaman: CSS/JS/gambar dimasukkan langsung ke HTML ---- */
+function cssRewrite(css,files,base,seen=new Set()){
+  css=css.replace(/@import\s+(?:url\()?\s*['"]?([^'")\s;]+)['"]?\s*\)?\s*;/gi,(m,u)=>{const k=lookupKey(files,base,u);
+    if(!k||seen.has(k)||files[k].t!=="text")return m;seen.add(k);return cssRewrite(files[k].d,files,dirOf(k),seen);});
+  return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,(m,q,u)=>{const k=lookupKey(files,base,u);return k?`url("${fileDataURL(files[k])}")`:m;});
+}
+const FOLDER_JS=`(function(){var F=window.__MI_FILES;if(!F)return;var B=window.__MI_BASE||'',P=window.__MI_PAGES||{},low={},k;
+for(k in F)low[k.toLowerCase()]=k;for(k in P)low[k.toLowerCase()]=k;
+function key(u){if(u==null)return null;u=String(u);if(/^(data:|blob:|https?:|\\/\\/|#|mailto:|tel:|javascript:|about:)/i.test(u))return null;var p=u.split('#')[0].split('?')[0];if(!p)return null;try{p=decodeURIComponent(p)}catch(e){}
+var s=(p.charAt(0)==='/'?[]:B.split('/').filter(Boolean)).concat(p.split('/')),o=[];for(var i=0;i<s.length;i++){if(s[i]==='..')o.pop();else if(s[i]&&s[i]!=='.')o.push(s[i]);}return low[o.join('/').toLowerCase()]||null;}
+function res(u){var k=key(u);return k&&F[k]?F[k]:null;}window.__MI_RES=res;
+var of=window.fetch;if(of)window.fetch=function(i,o){var r=typeof i==='string'||i instanceof URL?res(String(i)):null;return of.call(this,r||i,o);};
+var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){var r=res(u);if(r)arguments[1]=r;return xo.apply(this,arguments);};
+function patch(C,p){if(!C)return;var d=Object.getOwnPropertyDescriptor(C.prototype,p);if(!d||!d.set)return;Object.defineProperty(C.prototype,p,{get:d.get,set:function(v){var r=res(v);d.set.call(this,r||v);},configurable:true,enumerable:d.enumerable});}
+patch(window.HTMLImageElement,'src');patch(window.HTMLMediaElement,'src');patch(window.HTMLSourceElement,'src');patch(window.HTMLScriptElement,'src');patch(window.HTMLEmbedElement,'src');patch(window.HTMLVideoElement,'poster');patch(window.HTMLLinkElement,'href');
+var sa=Element.prototype.setAttribute;Element.prototype.setAttribute=function(n,v){var l=String(n).toLowerCase();if(l==='src'||l==='poster'||l==='data'||(l==='href'&&this.tagName!=='A')){var r=res(v);if(r)v=r;}return sa.call(this,n,v);};
+var OA=window.Audio;if(OA){var NA=function(u){var a=new OA();if(u!==undefined)a.src=u;return a;};NA.prototype=OA.prototype;window.Audio=NA;}
+document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||a.target==='_blank')return;var h=a.getAttribute('href')||'';var k=key(h);if(k&&P[k]){e.preventDefault();try{parent.postMessage({__mi:1,t:'nav',m:k},'*');}catch(_){}}},true);
+})();`;
+function buildFolderPage(bundle,page,report=true){
+  const files=bundle.files, base=dirOf(page), src=files[page]?files[page].d:"<p>Halaman tidak ditemukan.</p>";
+  const doc=new DOMParser().parseFromString(src,"text/html");
+  doc.querySelectorAll("base").forEach(b=>b.remove());
+  doc.querySelectorAll('link[href]').forEach(l=>{const rel=(l.getAttribute("rel")||"").toLowerCase();const k=lookupKey(files,base,l.getAttribute("href"));if(!k)return;
+    if(rel.includes("stylesheet")&&files[k].t==="text"){const st=doc.createElement("style");if(l.media)st.media=l.media;st.textContent=cssRewrite(files[k].d,files,dirOf(k));l.replaceWith(st);}
+    else l.setAttribute("href",fileDataURL(files[k]));});
+  doc.querySelectorAll("style").forEach(st=>{st.textContent=cssRewrite(st.textContent,files,base);});
+  doc.querySelectorAll("[style]").forEach(el=>el.setAttribute("style",cssRewrite(el.getAttribute("style"),files,base)));
+  doc.querySelectorAll("script[src]").forEach(s=>{const k=lookupKey(files,base,s.getAttribute("src"));if(!k)return;
+    if(files[k].t==="text"&&(s.type||"").toLowerCase()!=="module"){s.removeAttribute("src");s.textContent=files[k].d.replace(/<\/script/gi,"<\\/script");}
+    else s.setAttribute("src",fileDataURL(files[k]));});
+  const attrs=[["img","src"],["audio","src"],["video","src"],["video","poster"],["source","src"],["track","src"],["embed","src"],["object","data"],["input","src"],["image","href"],["image","xlink:href"],["use","href"],["use","xlink:href"],["iframe","src"]];
+  for(const [tag,at] of attrs)doc.querySelectorAll(tag).forEach(el=>{const v=el.getAttribute(at);const k=lookupKey(files,base,v);if(!k)return;
+    if(tag==="iframe"&&/\.html?$/i.test(k)){el.removeAttribute("src");el.setAttribute("srcdoc",buildFolderPage(bundle,k,false));el.setAttribute("sandbox","allow-scripts allow-forms allow-modals");}
+    else el.setAttribute(at,fileDataURL(files[k]));});
+  doc.querySelectorAll("[srcset]").forEach(el=>el.setAttribute("srcset",el.getAttribute("srcset").split(",").map(part=>{const [u,...r]=part.trim().split(/\s+/);const k=lookupKey(files,base,u);return [k?fileDataURL(files[k]):u,...r].join(" ");}).join(", ")));
+  // peta file untuk aset yang dimuat lewat JavaScript (new Audio('a.mp3'), fetch('data.json'), img.src=…)
+  const map={},pages={};
+  for(const k in files){if(/\.html?$/i.test(k))pages[k]=1;else map[k]=fileDataURL(files[k]);}
+  const tag=`<script>window.__MI_REPORT=${report?1:0};window.__MI_BASE=${JSON.stringify(base)};window.__MI_PAGES=${JSON.stringify(pages)};window.__MI_FILES=${JSON.stringify(map).replace(/<\//g,"<\\/")};${SHIM_JS}${FOLDER_JS}<\/script>`;
+  const html="<!DOCTYPE html>\n"+doc.documentElement.outerHTML;
+  const m=html.match(/<head[^>]*>/i);
+  return m?html.slice(0,m.index+m[0].length)+tag+html.slice(m.index+m[0].length):tag+html;
+}
+
+/* ---- membaca folder / ZIP ---- */
+async function unzipFile(file){
+  const buf=new Uint8Array(await file.arrayBuffer()),dv=new DataView(buf.buffer);let eocd=-1;
+  for(let i=buf.length-22;i>=Math.max(0,buf.length-65557);i--)if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;}
+  if(eocd<0)throw new Error("File ZIP tidak valid.");
+  const n=dv.getUint16(eocd+10,true);let p=dv.getUint32(eocd+16,true);const out=[],td=new TextDecoder();
+  if(n>MAX_FILES)throw new Error(`ZIP berisi ${n} file (maks ${MAX_FILES}).`);
+  for(let i=0;i<n;i++){
+    if(dv.getUint32(p,true)!==0x02014b50)throw new Error("File ZIP rusak.");
+    const flags=dv.getUint16(p+8,true),method=dv.getUint16(p+10,true),csize=dv.getUint32(p+20,true),nlen=dv.getUint16(p+28,true),xlen=dv.getUint16(p+30,true),clen=dv.getUint16(p+32,true),lho=dv.getUint32(p+42,true);
+    const name=td.decode(buf.subarray(p+46,p+46+nlen));p+=46+nlen+xlen+clen;
+    if(name.endsWith("/")||isJunk(name))continue;
+    if(flags&1)throw new Error("ZIP berkata sandi tidak didukung.");
+    const start=lho+30+dv.getUint16(lho+26,true)+dv.getUint16(lho+28,true),data=buf.subarray(start,start+csize);let bytes;
+    if(method===0)bytes=data;
+    else if(method===8){if(!("DecompressionStream" in window))throw new Error("Browser ini belum bisa membuka ZIP. Gunakan Chrome/Edge terbaru atau unggah folder.");
+      bytes=new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());}
+    else throw new Error("Jenis kompresi ZIP tidak didukung.");
+    out.push({path:name,file:new File([bytes],name.split("/").pop())});
+  }
+  return out;
+}
+async function entriesFromDrop(dt){
+  const items=[...(dt.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+  if(!items.length||(items.length===1&&items[0].isFile))return null; // satu file biasa
+  const out=[];
+  async function walk(entry,prefix){
+    if(entry.isFile){const f=await new Promise((ok,no)=>entry.file(ok,no));out.push({path:prefix+entry.name,file:f});}
+    else if(entry.isDirectory){const r=entry.createReader();let batch;do{batch=await new Promise((ok,no)=>r.readEntries(ok,no));for(const e of batch)await walk(e,prefix+entry.name+"/");}while(batch.length);}
+  }
+  for(const e of items)await walk(e,"");
+  return out;
+}
+function pickEntry(paths){
+  const html=paths.filter(p=>/\.html?$/i.test(p)).sort((a,b)=>a.split("/").length-b.split("/").length||a.localeCompare(b));
+  return html.find(p=>/^index\.html?$/i.test(p))||html.find(p=>!p.includes("/"))||html.find(p=>/(^|\/)index\.html?$/i.test(p))||html[0]||null;
+}
+async function takeFolder(list,label){
+  fileErr("");
+  list=list.filter(x=>!isJunk(x.path));
+  if(!list.length)return fileErr("Folder kosong.");
+  if(list.length>MAX_FILES)return fileErr(`Folder berisi ${list.length} file. Maksimal ${MAX_FILES}.`);
+  // buang nama folder teratas bila semua file berada di dalamnya
+  const top=list[0].path.split("/")[0];
+  if(list.every(x=>x.path.includes("/")&&x.path.split("/")[0]===top))list=list.map(x=>({...x,path:x.path.slice(top.length+1)}));
+  const entry=pickEntry(list.map(x=>x.path));
+  if(!entry)return fileErr("Tidak ada file HTML di folder ini. Pastikan ada index.html.");
+  $("#kDrop").innerHTML=`⏳ Membaca ${list.length} file…`;
+  const files={};let raw=0;
+  try{
+    for(const {path,file} of list){
+      const e=extOf(path),m=MIME[e]||file.type||"application/octet-stream";raw+=file.size;
+      if(TEXT_EXT.test(e))files[path]={t:"text",m,d:await readAs(file,"readAsText")};
+      else{const u=await readAs(file,"readAsDataURL");files[path]={t:"b64",m,d:u.slice(u.indexOf(",")+1)};}
+    }
+  }catch{renderDrop();return fileErr("Sebagian file tidak bisa dibaca.");}
+  const bundle={entry,files};const size=JSON.stringify(bundle).length;
+  if(size>MAX_FOLDER){
+    const big=Object.entries(files).sort((a,b)=>b[1].d.length-a[1].d.length).slice(0,3).map(([k,v])=>`${k} (${fmtSize(v.d.length*(v.t==="b64"?.75:1))})`).join(", ");
+    renderDrop();return fileErr(`Folder terlalu besar (${fmtSize(size)} setelah dikemas, maks ${fmtSize(MAX_FOLDER)}). File terbesar: ${big}. Kecilkan gambar/video atau pakai tautan YouTube.`);
+  }
+  const pages=Object.keys(files).filter(p=>/\.html?$/i.test(p));
+  form.file={nama:(label||top||"folder").slice(0,100),tipe:"folder",ukuran:size,bundle,jumlah:Object.keys(files).length,pages};form.hapusBerkas=false;form.autoShot="";form.picker=false;
+  $("#kForm").dataset.dirty="1";renderDrop();renderShot();preview();
+}
+function splitChunks(str){
+  const enc=new TextEncoder(),out=[];let i=0;
+  while(i<str.length){let n=Math.min(CHUNK,str.length-i);let part=str.slice(i,i+n);
+    while(enc.encode(part).length>950000){n=Math.floor(n*0.85);part=str.slice(i,i+n);}
+    const c=part.charCodeAt(part.length-1);if(c>=0xD800&&c<=0xDBFF&&i+n<str.length){n--;part=str.slice(i,i+n);}
+    out.push(part);i+=n;}
+  return out;
+}
+async function deleteBerkas(id){
+  const meta=await db.doc("berkas/"+id).get();
+  const n=meta.exists&&meta.data()&&meta.data().tipe==="folder"?+meta.data().bagian||0:0;
+  for(let i=0;i<n;i++)await db.doc(`berkas/${id}/bagian/${i}`).delete();
+  await db.doc("berkas/"+id).delete();delete BERKAS_CACHE[id];
+}
+async function saveFolder(id,f,progress){
+  const old=await db.doc("berkas/"+id).get();
+  const oldN=old.exists&&old.data()&&old.data().tipe==="folder"?+old.data().bagian||0:0;
+  const parts=splitChunks(JSON.stringify(f.bundle));
+  for(let i=0;i<parts.length;i++){progress(`Mengunggah ${i+1}/${parts.length}…`);await db.doc(`berkas/${id}/bagian/${i}`).set({isi:parts[i]});}
+  await db.doc("berkas/"+id).set({nama:f.nama,tipe:"folder",ukuran:f.ukuran,bagian:parts.length,entry:f.bundle.entry,jumlah:f.jumlah});
+  for(let i=parts.length;i<oldN;i++)await db.doc(`berkas/${id}/bagian/${i}`).delete();
+  BERKAS_CACHE[id]={nama:f.nama,tipe:"folder",bundle:f.bundle};
+}
+
 /* unggah berkas */
 function renderDrop(){
-  const b=form.file||form.berkasLama;
-  $("#kDrop").innerHTML=b?`<div class="file-chip"><span class="fi">${{html:"🌐",pdf:"📄",image:"🖼️"}[b.tipe]}</span><span class="fm"><b>${esc(b.nama)}</b><small>${BERKAS_TIPE[b.tipe]} · ${fmtSize(b.ukuran)}${form.file?" · siap diunggah":" · tersimpan"}</small></span><button type="button" class="mini" data-act="ganti">Ganti</button><button type="button" class="mini danger" data-act="hapus">Hapus</button></div>`
-    :`<div style="font-size:1.8rem">📤</div><b>Seret file ke sini</b> atau <span style="color:var(--blue);font-weight:700">pilih file</span><br><small>HTML maks ${fmtSize(MAX_HTML)} · PDF/gambar maks ${fmtSize(MAX_DATAURL*3/4)} (gambar besar dikecilkan otomatis)</small>`;
+  const b=form.file||(form.picker?null:form.berkasLama);
+  const extra=b&&b.tipe==="folder"&&form.file?` · ${form.file.jumlah} file · halaman utama: ${form.file.pages.length>1?`<select data-act="entry" onclick="event.stopPropagation()">${form.file.pages.map(p=>`<option ${p===form.file.bundle.entry?"selected":""}>${esc(p)}</option>`).join("")}</select>`:esc(form.file.bundle.entry)}`:"";
+  $("#kDrop").innerHTML=b?`<div class="file-chip"><span class="fi">${{html:"🌐",pdf:"📄",image:"🖼️",folder:"📁"}[b.tipe]}</span><span class="fm"><b>${esc(b.nama)}</b><small>${BERKAS_TIPE[b.tipe]} · ${fmtSize(b.ukuran)}${extra}${form.file?" · siap diunggah":" · tersimpan"}</small></span><button type="button" class="mini" data-act="ganti">Ganti</button><button type="button" class="mini danger" data-act="hapus">Hapus</button></div>`
+    :`<div style="font-size:1.8rem">📤</div><b>Seret folder atau file ke sini</b><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:10px 0 6px"><button type="button" class="mini" data-act="dir">📁 Pilih folder</button><button type="button" class="mini" data-act="file">📄 Pilih file / ZIP</button></div><small>Folder/ZIP maks ${fmtSize(MAX_FOLDER)} · HTML tunggal maks ${fmtSize(MAX_HTML)} · PDF/gambar maks ${fmtSize(MAX_DATAURL*3/4)}</small>${form.picker&&form.berkasLama?`<br><button type="button" class="mini" data-act="batal" style="margin-top:8px">↩ Batal ganti (tetap pakai ${esc(form.berkasLama.nama)})</button>`:""}`;
 }
 function fileErr(msg){const e=$("#kFileErr");e.textContent=msg||"";e.style.display=msg?"block":"none";}
 const readAs=(f,how)=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(r.error);r[how](f);});
@@ -1091,8 +1323,12 @@ async function shrinkImage(f){
 async function takeFile(f){
   fileErr("");if(!f)return;
   const name=f.name||"berkas", ext=(name.split(".").pop()||"").toLowerCase();
+  if(ext==="zip"||f.type==="application/zip"||f.type==="application/x-zip-compressed"){
+    $("#kDrop").innerHTML="⏳ Membuka ZIP…";
+    try{return await takeFolder(await unzipFile(f),name.replace(/\.zip$/i,""));}catch(err){renderDrop();return fileErr(err.message||"ZIP tidak bisa dibuka.");}
+  }
   const tipe=/^html?$/.test(ext)||f.type==="text/html"?"html":ext==="pdf"||f.type==="application/pdf"?"pdf":f.type.startsWith("image/")?"image":null;
-  if(!tipe)return fileErr("Format tidak didukung. Gunakan .html, .pdf, atau gambar (.jpg/.png/.gif/.webp).");
+  if(!tipe)return fileErr("Format tidak didukung. Gunakan folder, .zip, .html, .pdf, atau gambar (.jpg/.png/.gif/.webp).");
   $("#kDrop").innerHTML="⏳ Membaca file…";
   try{
     let isi;
@@ -1101,33 +1337,65 @@ async function takeFile(f){
       if(isi.length>MAX_DATAURL){
         if(tipe==="image"&&!/gif|svg/.test(f.type)){isi=await shrinkImage(f);if(!isi){renderDrop();return fileErr("Gambar terlalu besar bahkan setelah dikecilkan.");}}
         else{renderDrop();return fileErr(`File terlalu besar (${fmtSize(f.size)}). Maksimal sekitar ${fmtSize(MAX_DATAURL*3/4)}.`);}}}
-    form.file={nama:name.slice(0,100),tipe,ukuran:new Blob([isi]).size,isi};form.hapusBerkas=false;
-    $("#kForm").dataset.dirty="1";renderDrop();
+    form.file={nama:name.slice(0,100),tipe,ukuran:new Blob([isi]).size,isi};form.hapusBerkas=false;form.picker=false;
+    form.autoShot=tipe==="image"?await makeShot(isi).catch(()=>""):"";
+    $("#kForm").dataset.dirty="1";renderDrop();renderShot();preview();
   }catch{renderDrop();fileErr("File tidak bisa dibaca.");}
 }
+$("#kDrop").addEventListener("change",e=>{if(e.target.matches("select[data-act=entry]")&&form.file){form.file.bundle.entry=e.target.value;preview();}});
 $("#kDrop").addEventListener("click",e=>{const a=e.target.closest("[data-act]");
-  if(a&&a.dataset.act==="hapus"){e.stopPropagation();if(form.file)form.file=null;else if(form.berkasLama){form.berkasLama=null;form.hapusBerkas=true;}$("#kForm").dataset.dirty="1";fileErr("");renderDrop();return;}
+  if(a&&a.dataset.act==="entry")return;
+  if(a&&a.dataset.act==="dir"){e.stopPropagation();$("#kDir").click();return;}
+  if(a&&a.dataset.act==="ganti"){e.stopPropagation();form.file=null;form.picker=true;renderDrop();return;}
+  if(a&&a.dataset.act==="batal"){e.stopPropagation();form.picker=false;fileErr("");renderDrop();preview();return;}
+  if(a&&a.dataset.act==="hapus"){e.stopPropagation();if(form.file)form.file=null;else if(form.berkasLama){form.berkasLama=null;form.hapusBerkas=true;}$("#kForm").dataset.dirty="1";fileErr("");renderDrop();renderShot();preview();return;}
   $("#kFile").click();});
 $("#kDrop").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#kFile").click();}});
 $("#kFile").onchange=e=>{takeFile(e.target.files[0]);e.target.value="";};
+$("#kDir").onchange=e=>{const fs=[...e.target.files];e.target.value="";if(fs.length)takeFolder(fs.map(f=>({path:f.webkitRelativePath||f.name,file:f})));};
 ["dragenter","dragover"].forEach(ev=>$("#kDrop").addEventListener(ev,e=>{e.preventDefault();$("#kDrop").classList.add("over");}));
 ["dragleave","drop"].forEach(ev=>$("#kDrop").addEventListener(ev,e=>{e.preventDefault();$("#kDrop").classList.remove("over");}));
-$("#kDrop").addEventListener("drop",e=>takeFile(e.dataTransfer.files[0]));
+$("#kDrop").addEventListener("drop",async e=>{
+  try{const list=await entriesFromDrop(e.dataTransfer);if(list)return takeFolder(list);}catch{return fileErr("Folder tidak bisa dibaca. Coba tombol 📁 Pilih folder.");}
+  takeFile(e.dataTransfer.files[0]);});
+
+/* gambar cuplikan */
+async function makeShot(f){
+  const url=typeof f==="string"?f:URL.createObjectURL(f);
+  try{const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=url;});
+    for(const [max,q] of [[640,.8],[480,.75],[360,.7]]){const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+      const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);const out=c.toDataURL("image/jpeg",q);if(out.length<=180000)return out;}
+    return null;}finally{if(typeof f!=="string")URL.revokeObjectURL(url);}
+}
+function renderShot(){
+  const b=$("#kShot");const auto=!form.cuplikan&&form.file&&form.file.tipe==="image";
+  b.style.backgroundImage=form.cuplikan?`url("${form.cuplikan}")`:"";b.innerHTML=form.cuplikan?"":auto?"✨<br>Otomatis dari<br>berkas gambar":"📷<br>Pilih gambar";
+  $("#kShotDel").hidden=!form.cuplikan;
+}
+$("#kShot").onclick=()=>$("#kShotFile").click();
+$("#kShot").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#kShotFile").click();}});
+$("#kShotFile").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+  if(!f.type.startsWith("image/")){toast("Pilih file gambar");return;}
+  $("#kShot").innerHTML="⏳";const out=await makeShot(f).catch(()=>null);
+  if(!out){toast("Gambar tidak bisa dipakai");renderShot();return;}
+  form.cuplikan=out;$("#kForm").dataset.dirty="1";renderShot();preview();};
+$("#kShotDel").onclick=()=>{form.cuplikan="";$("#kForm").dataset.dirty="1";renderShot();preview();};
 
 function resetForm(){
-  editId=null;$("#kForm").reset();$("#kForm").dataset.dirty="";form={ikon:EMOJIS[0],warna:COLORS[0],file:null,berkasLama:null,hapusBerkas:false};$("#kTgl").value=today();fileErr("");renderDrop();
+  editId=null;$("#kForm").reset();$("#kForm").dataset.dirty="";form={ikon:EMOJIS[0],warna:COLORS[0],file:null,berkasLama:null,hapusBerkas:false,cuplikan:"",picker:false};renderShot();$("#kTgl").value=today();fileErr("");renderDrop();
   $("#formTitle").textContent="Tambah karya";$("#formSub").textContent="Isi data, lihat pratinjaunya di kanan, lalu simpan.";
   $$("#kForm .fld").forEach(f=>f.classList.remove("bad"));syncPick();preview();
 }
 function fillForm(k){
   if(!k)return resetForm();
   for(const[f,s]of Object.entries(FIELDS))$(s).value=k[f]||"";
-  $("#kUnggul").checked=k.unggulan;form={ikon:k.ikon,warna:k.warna,file:null,berkasLama:k.berkas,hapusBerkas:false};fileErr("");renderDrop();
+  $("#kUnggul").checked=k.unggulan;form={ikon:k.ikon,warna:k.warna,file:null,berkasLama:k.berkas,hapusBerkas:false,cuplikan:k.cuplikan||"",picker:false};fileErr("");renderDrop();renderShot();
   if(!EMOJIS.includes(k.ikon))$("#kIkon").insertAdjacentHTML("afterbegin",`<button type="button" data-e="${esc(k.ikon)}">${esc(k.ikon)}</button>`);
   $("#formTitle").textContent="Ubah karya";$("#formSub").textContent="Perubahan langsung tampil di situs setelah disimpan.";
   $$("#kForm .fld").forEach(f=>f.classList.remove("bad"));syncPick();preview();
 }
-function preview(){const f=form.file||form.berkasLama;const d=clean("preview",{...readForm(),berkas:f?{nama:f.nama,tipe:f.tipe,ukuran:f.ukuran}:null});$("#kPrev").innerHTML=cardHTML(d,0,false);$("#deskCount").textContent=$("#kDesk").value.length+"/220";}
+function preview(){const f=form.file||form.berkasLama;const d=clean("preview",{...readForm(),cuplikan:form.cuplikan||(form.file&&form.file.tipe==="image"?form.autoShot||"":""),berkas:f?{nama:f.nama,tipe:f.tipe,ukuran:f.ukuran}:null});$("#kPrev").innerHTML=cardHTML(d,0,false);
+  const lv=$("#kPrev [data-live]");if(lv){if(form.file&&form.file.tipe==="folder")fillLive(lv,null,form.file.bundle);else if(form.file&&form.file.tipe==="html")fillLive(lv,form.file.isi);else if(editId){lv.dataset.live=editId;fillLive(lv);}}$("#deskCount").textContent=$("#kDesk").value.length+"/220";}
 $("#kForm").addEventListener("input",()=>{$("#kForm").dataset.dirty="1";preview();});
 $("#kCancel").onclick=()=>{resetForm();showAdView("karya");};
 function validate(d){
@@ -1141,11 +1409,14 @@ $("#kForm").onsubmit=async e=>{
   if(!validate(d)){toast("Periksa kolom yang ditandai merah");$("#kForm .bad input, #kForm .bad textarea")?.focus();return;}
   const ref=editId?db.collection("karya").doc(editId):db.collection("karya").doc();
   const f=form.file, meta=f?{nama:f.nama,tipe:f.tipe,ukuran:f.ukuran}:(form.hapusBerkas?null:form.berkasLama||null);
-  const body={...d,tgl:d.tgl||today(),berkas:meta};
+  const shot=form.cuplikan||(f&&f.tipe==="image"?form.autoShot||"":(!f&&!form.hapusBerkas&&form.berkasLama&&form.berkasLama.tipe==="image"&&editId?(KARYA.find(x=>x.id===editId)||{}).cuplikan||"":""));
+  const body={...d,tgl:d.tgl||today(),berkas:meta,cuplikan:shot||null};
   $("#kSave").classList.add("saving");$("#kSave").textContent=f?"Mengunggah berkas…":"Menyimpan…";
   try{
-    if(f){await db.doc("berkas/"+ref.id).set({nama:f.nama,tipe:f.tipe,ukuran:f.ukuran,isi:f.isi});BERKAS_CACHE[ref.id]={nama:f.nama,tipe:f.tipe,isi:f.isi};}
-    else if(form.hapusBerkas&&editId){await db.doc("berkas/"+ref.id).delete();delete BERKAS_CACHE[ref.id];}
+    const prog=t=>{$("#kSave").textContent=t;};
+    if(f&&f.tipe==="folder"){await saveFolder(ref.id,f,prog);}
+    else if(f){if(editId)await deleteBerkas(ref.id).catch(()=>{});await db.doc("berkas/"+ref.id).set({nama:f.nama,tipe:f.tipe,ukuran:f.ukuran,isi:f.isi});BERKAS_CACHE[ref.id]={nama:f.nama,tipe:f.tipe,isi:f.isi};}
+    else if(form.hapusBerkas&&editId){await deleteBerkas(ref.id);}
     $("#kSave").textContent="Menyimpan…";
     await ref.set(body);toast(editId?"✅ Perubahan disimpan":"✅ Karya ditambahkan");resetForm();showAdView("karya");}
   catch(err){failWrite(err);}
