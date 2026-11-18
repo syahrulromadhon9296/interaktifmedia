@@ -861,7 +861,7 @@ async function fillLive(el,isi,bundle){
   try{
     if(isi==null&&!bundle){if(!db)return;const d=await loadBerkas(el.dataset.live);if(d.tipe==="html")isi=d.isi;else if(d.tipe==="folder")bundle=d.bundle;else return;}
     const f=document.createElement("iframe");f.setAttribute("sandbox","allow-scripts");f.setAttribute("tabindex","-1");f.setAttribute("aria-hidden","true");f.setAttribute("loading","lazy");
-    f.srcdoc=bundle?buildFolderPage(bundle,bundle.entry,false):prepHTML(isi,false);el.innerHTML="";el.appendChild(f);
+    f.srcdoc=bundle?buildFolderPage(bundle,bundle.entry,false,el.dataset.live||""):prepHTML(isi,false,el.dataset.live||"");el.innerHTML="";el.appendChild(f);
   }catch{el.remove();}
 }
 $("#daftar-karya").addEventListener("click",e=>{
@@ -955,14 +955,26 @@ const SANDBOX="allow-scripts allow-forms allow-modals allow-popups allow-pointer
 /* Lapisan kompatibilitas untuk karya HTML di dalam sandbox:
    - localStorage/sessionStorage diganti penyimpanan sementara (aslinya diblokir sandbox → karya macet)
    - error & file yang hilang dilaporkan ke halaman induk agar admin tahu penyebabnya */
-const SHIM_JS=`(function(){function mk(){var d={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[k]=String(v)},removeItem:function(k){delete d[k]},clear:function(){d={}},key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(d).length}}}
-['localStorage','sessionStorage'].forEach(function(n){try{window[n].getItem('x')}catch(e){try{Object.defineProperty(window,n,{value:mk(),configurable:true})}catch(_){}}});
+const SHIM_JS=`(function(){function mk(init,persist){var d={},t=null,k0;if(init&&typeof init==='object')for(k0 in init)if(typeof init[k0]==='string')d[k0]=init[k0];
+function save(){if(!persist)return;clearTimeout(t);t=setTimeout(function(){try{parent.postMessage({__mi:1,t:'store',s:JSON.stringify(d)},'*')}catch(_){}},250)}
+return{getItem:function(k){return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[String(k)]=String(v);save()},removeItem:function(k){delete d[k];save()},clear:function(){d={};save()},key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(d).length}}}
+['localStorage','sessionStorage'].forEach(function(n){try{window[n].getItem('x')}catch(e){try{Object.defineProperty(window,n,{value:n==='localStorage'?mk(window.__MI_STORE,!!window.__MI_PERSIST):mk(),configurable:true})}catch(_){}}});
 try{document.cookie}catch(e){var ck='';try{Object.defineProperty(document,'cookie',{get:function(){return ck},set:function(v){ck=(ck?ck+'; ':'')+String(v).split(';')[0]},configurable:true})}catch(_){}}
-var R=window.__MI_REPORT;function send(t,m){try{parent.postMessage({__mi:1,t:t,m:String(m).slice(0,300)},'*')}catch(_){}}
-if(R){window.addEventListener('error',function(e){var el=e.target;if(el&&el!==window&&(el.src||el.href)){send('file',el.getAttribute('src')||el.getAttribute('href'))}else{send('js',(e.message||'Error')+(e.lineno?' (baris '+e.lineno+')':''))}},true);
-window.addEventListener('unhandledrejection',function(e){send('js',e.reason&&e.reason.message||e.reason)});}})();`;
-function prepHTML(isi,report=true){
-  const tag=`<script>window.__MI_REPORT=${report?1:0};${SHIM_JS}<\/script>`;
+var R=window.__MI_REPORT;function send(t,m,x){try{parent.postMessage({__mi:1,t:t,m:String(m).slice(0,300),x:x?String(x).slice(0,200):''},'*')}catch(_){}}
+function where(f,l){f=String(f||'');if(!f||/^about:|^data:/.test(f))return l?' (baris '+l+')':'';return ' — '+f.split('/').slice(-2).join('/')+(l?' baris '+l:'');}
+if(R){window.addEventListener('error',function(e){var el=e.target;
+  if(el&&el!==window&&(el.src||el.href)){var u=el.getAttribute('src')||el.getAttribute('href')||'';if(/favicon/i.test(u)||(el.tagName==='LINK'&&/icon|manifest/i.test(el.rel||'')))return;if(window.__MI_RES&&window.__MI_RES(u))return;send(/^(https?:)?\\/\\//i.test(u)?'net':'file',u);return;}
+  var m=e.message||'Error';if(/ResizeObserver loop/i.test(m))return;
+  if(/^Script error\\.?$/i.test(m)&&!e.filename){send('ext','');return;}
+  send('js',m,where(e.filename,e.lineno));},true);
+window.addEventListener('unhandledrejection',function(e){var r=e.reason;send('js',r&&r.message||r,r&&r.stack?String(r.stack).split('\\n')[1]:'')});}})();`;
+/* progres karya (localStorage di dalam karya) disimpan per karya di perangkat pengunjung */
+const STORE_MAX=2000000;
+function storeInit(id){if(!id)return "";let v=null;try{v=localStorage.getItem("mi_store_"+id);}catch{}
+  let ok="{}";if(v){try{JSON.parse(v);ok=v;}catch{}}
+  return `window.__MI_STORE=${ok.replace(/</g,"\\u003c")};`;}
+function prepHTML(isi,report=true,storeId=""){
+  const tag=`<script>window.__MI_REPORT=${report?1:0};window.__MI_PERSIST=${report&&storeId?1:0};${storeInit(storeId)}${SHIM_JS}<\/script>`;
   const m=isi.match(/<head[^>]*>/i)||isi.match(/<html[^>]*>/i);
   if(m){const i=m.index+m[0].length;return isi.slice(0,i)+tag+isi.slice(i);}
   return tag+isi;
@@ -972,22 +984,37 @@ addEventListener("message",e=>{
   const d=e.data;if(!d||d.__mi!==1)return;
   for(const [win,st] of FRAME_ERRS){if(win===e.source){
     if(d.t==="nav"){if(st.nav)st.nav(String(d.m));return;}
-    const msg=st.nav&&d.t==="file"?`File tidak ditemukan di folder: <b>${esc(d.m)}</b> — periksa nama & huruf besar/kecilnya.`:d.t==="file"?`File tidak ditemukan: <b>${esc(d.m)}</b> — karya bergantung pada file terpisah. Gabungkan CSS/JS/gambar ke dalam satu file HTML.`:`Error di karya: ${esc(d.m)}`;
-    if(st.errs.has(msg)||st.errs.size>=4)return;st.errs.add(msg);
-    st.box.hidden=false;st.box.innerHTML="⚠️ <b>Karya mengalami masalah</b><br>"+[...st.errs].join("<br>");return;}}
+    if(d.t==="store"){if(st.storeId&&typeof d.s==="string"&&d.s.length<=STORE_MAX){try{localStorage.setItem("mi_store_"+st.storeId,d.s);}catch{}}return;}
+    const msg=explainErr(d,!!st.nav);if(!msg)return;
+    console.warn("[Karya]",d.t,d.m,d.x||"");
+    if(st.errs.has(msg)||st.errs.size>=5)return;st.errs.add(msg);
+    if(!CAN_EDIT)return; // pengunjung tidak melihat pesan teknis
+    st.box.hidden=false;st.box.innerHTML="⚠️ <b>Karya mengalami masalah</b> <small style='opacity:.7'>(hanya terlihat oleh admin)</small><br>"+[...st.errs].join("<br>")+
+      `<br><button class="mini" style="margin-top:6px" onclick="navigator.clipboard&&navigator.clipboard.writeText(this.parentNode.innerText).then(()=>toast('Detail disalin'))">📋 Salin detail</button>`;return;}}
 });
+function explainErr(d,folder){
+  const m=esc(d.m||""),x=esc(d.x||"");
+  if(d.t==="ext")return ""; // error dari skrip CDN tanpa detail: diabaikan
+  if(d.t==="net")return `Gagal memuat dari internet: <b>${m}</b> — periksa koneksi atau alamat CDN-nya.`;
+  if(d.t==="file")return folder?`File tidak ditemukan di folder: <b>${m}</b> — pastikan file itu ikut diunggah dan nama/foldernya sama persis.`
+    :`File tidak ditemukan: <b>${m}</b> — karya ini butuh file lain. Unggah ulang sebagai <b>📁 folder</b> atau <b>ZIP</b> lewat Kelola karya → Ubah → Ganti.`;
+  if(/Cannot use import statement|import declarations may only appear|Unexpected token 'export'/i.test(d.m))return `Karya memakai JavaScript module tetapi tag &lt;script&gt;-nya tidak bertipe module${x}. Tambahkan <code>type="module"</code>.`;
+  if(/Failed to resolve module specifier|Relative references must start with/i.test(d.m))return `Karya memakai pustaka dari npm (${m}) yang tidak ikut terunggah. Unggah folder hasil <i>build</i> (misalnya folder <b>dist</b>).`;
+  if(/indexedDB|IDBFactory|caches|serviceWorker|SecurityError/i.test(d.m))return `Karya memakai fitur penyimpanan browser yang tidak tersedia di mode aman${x}: ${m}`;
+  return `Error di kode karya${x}: ${m}`;
+}
 function watchFrame(f,box){for(const [w,st] of FRAME_ERRS)if(!w||w.closed||st.box===box||!document.contains(st.box))FRAME_ERRS.delete(w);FRAME_ERRS.set(f.contentWindow,{box,errs:new Set()});}
-function renderBerkasInto(el,d,full){
+function renderBerkasInto(el,d,full,id=""){
   el.innerHTML="";
   if(d.tipe==="html"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.setAttribute("sandbox",SANDBOX);f.setAttribute("allow","fullscreen; autoplay");f.title=d.nama||"Karya";
     const eb=document.createElement("div");eb.className="frame-err";eb.hidden=true;
-    el.appendChild(f);el.appendChild(eb);watchFrame(f,eb);f.srcdoc=prepHTML(d.isi,true);
+    el.appendChild(f);el.appendChild(eb);watchFrame(f,eb);FRAME_ERRS.get(f.contentWindow).storeId=id;f.srcdoc=prepHTML(d.isi,true,id);
     if(full){el.style.display="flex";el.style.flexDirection="column";f.style.flex="1";}}
   else if(d.tipe==="folder"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.setAttribute("sandbox",SANDBOX);f.setAttribute("allow","fullscreen; autoplay");f.title=d.nama||"Karya";
     const eb=document.createElement("div");eb.className="frame-err";eb.hidden=true;
     el.appendChild(f);el.appendChild(eb);watchFrame(f,eb);
-    const go=page=>{const st=FRAME_ERRS.get(f.contentWindow);if(st){st.errs.clear();eb.hidden=true;}f.srcdoc=buildFolderPage(d.bundle,page,true);};
-    FRAME_ERRS.get(f.contentWindow).nav=go;go(d.bundle.entry);
+    const go=page=>{const st=FRAME_ERRS.get(f.contentWindow);if(st){st.errs.clear();eb.hidden=true;}f.srcdoc=buildFolderPage(d.bundle,page,true,id);};
+    FRAME_ERRS.get(f.contentWindow).nav=go;FRAME_ERRS.get(f.contentWindow).storeId=id;go(d.bundle.entry);
     if(full){el.style.display="flex";el.style.flexDirection="column";f.style.flex="1";}}
   else if(d.tipe==="image"){const i=document.createElement("img");i.className="karya-img";i.alt=d.nama||"Karya";i.src=d.isi;el.appendChild(i);}
   else if(d.tipe==="pdf"){const f=document.createElement("iframe");f.className=full?"":"karya-frame";f.title=d.nama||"PDF";f.src=dataUrlToBlobUrl(d.isi);el.appendChild(f);}
@@ -1001,7 +1028,7 @@ async function showBerkas(p,k,inModal){
     const box=document.createElement("div");
     const bar=document.createElement("div");bar.className="frame-bar";
     bar.innerHTML=`<a class="mini" href="${esc(playLink(k))}" target="_blank" rel="noopener">⛶ Layar penuh</a>`;
-    p.innerHTML="";p.style.display="block";p.appendChild(box);p.appendChild(bar);renderBerkasInto(box,d,false);
+    p.innerHTML="";p.style.display="block";p.appendChild(box);p.appendChild(bar);renderBerkasInto(box,d,false,k.id);
   }catch(err){p.classList.remove("has-frame");p.style.display="";p.innerHTML=`<div style="padding:28px">⚠️ Karya tidak bisa dimuat. ${esc(err.message||"")}</div>`;}
 }
 let qrLib=null;
@@ -1175,6 +1202,19 @@ function cssRewrite(css,files,base,seen=new Set()){
     if(!k||seen.has(k)||files[k].t!=="text")return m;seen.add(k);return cssRewrite(files[k].d,files,dirOf(k),seen);});
   return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,(m,q,u)=>{const k=lookupKey(files,base,u);return k?`url("${fileDataURL(files[k])}")`:m;});
 }
+/* JavaScript module: setiap file diubah menjadi data: URL, import antar-file ditulis ulang */
+const b64utf8=t=>{const by=new TextEncoder().encode(t);let s="";for(let i=0;i<by.length;i+=0x8000)s+=String.fromCharCode.apply(null,by.subarray(i,i+0x8000));return btoa(s);};
+function rewriteModule(code,files,base,stack,memo){
+  const sub=spec=>{const k=lookupKey(files,base,spec);if(!k)return null;if(files[k].t!=="text")return fileDataURL(files[k]);return /\.(m?js)$/i.test(k)?moduleURL(files,k,stack,memo):fileDataURL(files[k]);};
+  return code
+    .replace(/(\bimport\s*(?:[\w$*{}\s,]+?\s*from\s*)?|\bexport\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*)(['"])([^'"\n]+)\2/g,(m,pre,q,spec)=>{const u=sub(spec);return u?pre+q+u+q:m;})
+    .replace(/\bimport\(\s*(['"])([^'"\n]+)\1\s*\)/g,(m,q,spec)=>{const u=sub(spec);return u?`import(${q}${u}${q})`:m;});
+}
+function moduleURL(files,k,stack,memo){
+  if(memo[k])return memo[k];if(stack.has(k))return null;stack.add(k);
+  const code=rewriteModule(files[k].d,files,dirOf(k),stack,memo)+"\n//# sourceURL="+k;
+  stack.delete(k);return memo[k]="data:text/javascript;base64,"+b64utf8(code);
+}
 const FOLDER_JS=`(function(){var F=window.__MI_FILES;if(!F)return;var B=window.__MI_BASE||'',P=window.__MI_PAGES||{},low={},k;
 for(k in F)low[k.toLowerCase()]=k;for(k in P)low[k.toLowerCase()]=k;
 function key(u){if(u==null)return null;u=String(u);if(/^(data:|blob:|https?:|\\/\\/|#|mailto:|tel:|javascript:|about:)/i.test(u))return null;var p=u.split('#')[0].split('?')[0];if(!p)return null;try{p=decodeURIComponent(p)}catch(e){}
@@ -1185,10 +1225,19 @@ var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u)
 function patch(C,p){if(!C)return;var d=Object.getOwnPropertyDescriptor(C.prototype,p);if(!d||!d.set)return;Object.defineProperty(C.prototype,p,{get:d.get,set:function(v){var r=res(v);d.set.call(this,r||v);},configurable:true,enumerable:d.enumerable});}
 patch(window.HTMLImageElement,'src');patch(window.HTMLMediaElement,'src');patch(window.HTMLSourceElement,'src');patch(window.HTMLScriptElement,'src');patch(window.HTMLEmbedElement,'src');patch(window.HTMLVideoElement,'poster');patch(window.HTMLLinkElement,'href');
 var sa=Element.prototype.setAttribute;Element.prototype.setAttribute=function(n,v){var l=String(n).toLowerCase();if(l==='src'||l==='poster'||l==='data'||(l==='href'&&this.tagName!=='A')){var r=res(v);if(r)v=r;}return sa.call(this,n,v);};
+function fixU(v){var r=res(v);return r;}
+function fixCss(t){return String(t).replace(/url\\(\\s*(['"]?)([^'")]+)\\1\\s*\\)/g,function(m,q,u){var r=res(u);return r?'url("'+r+'")':m;});}
+function fix(el){if(!el||el.nodeType!==1)return;var a=['src','poster','data'],i,v,r;for(i=0;i<a.length;i++){v=el.getAttribute(a[i]);if(v){r=res(v);if(r)sa.call(el,a[i],r);}}
+ if(el.tagName==='LINK'){v=el.getAttribute('href');r=res(v);if(r)sa.call(el,'href',r);}
+ v=el.getAttribute('srcset');if(v&&!/^data:/.test(v)){sa.call(el,'srcset',v.split(',').map(function(p){var q=p.trim().split(/\\s+/);var x=res(q[0]);if(x)q[0]=x;return q.join(' ');}).join(', '));}
+ v=el.getAttribute('style');if(v&&v.indexOf('url(')>-1){r=fixCss(v);if(r!==v)sa.call(el,'style',r);}
+ if(el.tagName==='STYLE'&&el.textContent.indexOf('url(')>-1){r=fixCss(el.textContent);if(r!==el.textContent)el.textContent=r;}}
+function scan(n){if(n.nodeType!==1)return;fix(n);if(n.querySelectorAll){var l=n.querySelectorAll('[src],[poster],[srcset],[style],[data],link[href],style');for(var i=0;i<l.length;i++)fix(l[i]);}}
+try{new MutationObserver(function(ms){for(var i=0;i<ms.length;i++){var m=ms[i];if(m.type==='childList'){for(var j=0;j<m.addedNodes.length;j++)scan(m.addedNodes[j]);}else fix(m.target);}}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src','style','srcset','poster','href','data']});}catch(_){}
 var OA=window.Audio;if(OA){var NA=function(u){var a=new OA();if(u!==undefined)a.src=u;return a;};NA.prototype=OA.prototype;window.Audio=NA;}
 document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||a.target==='_blank')return;var h=a.getAttribute('href')||'';var k=key(h);if(k&&P[k]){e.preventDefault();try{parent.postMessage({__mi:1,t:'nav',m:k},'*');}catch(_){}}},true);
 })();`;
-function buildFolderPage(bundle,page,report=true){
+function buildFolderPage(bundle,page,report=true,storeId=""){
   const files=bundle.files, base=dirOf(page), src=files[page]?files[page].d:"<p>Halaman tidak ditemukan.</p>";
   const doc=new DOMParser().parseFromString(src,"text/html");
   doc.querySelectorAll("base").forEach(b=>b.remove());
@@ -1197,9 +1246,14 @@ function buildFolderPage(bundle,page,report=true){
     else l.setAttribute("href",fileDataURL(files[k]));});
   doc.querySelectorAll("style").forEach(st=>{st.textContent=cssRewrite(st.textContent,files,base);});
   doc.querySelectorAll("[style]").forEach(el=>el.setAttribute("style",cssRewrite(el.getAttribute("style"),files,base)));
-  doc.querySelectorAll("script[src]").forEach(s=>{const k=lookupKey(files,base,s.getAttribute("src"));if(!k)return;
-    if(files[k].t==="text"&&(s.type||"").toLowerCase()!=="module"){s.removeAttribute("src");s.textContent=files[k].d.replace(/<\/script/gi,"<\\/script");}
-    else s.setAttribute("src",fileDataURL(files[k]));});
+  const memo={};
+  doc.querySelectorAll("script").forEach(s=>{const isMod=(s.type||"").toLowerCase()==="module";const src=s.getAttribute("src");
+    if(src){const k=lookupKey(files,base,src);if(!k)return;
+      if(isMod&&files[k].t==="text"){const u=moduleURL(files,k,new Set(),memo);if(u){s.setAttribute("src",u);s.removeAttribute("crossorigin");s.removeAttribute("integrity");}}
+      else if(files[k].t==="text"&&(s.defer||s.async)){s.setAttribute("src","data:text/javascript;base64,"+b64utf8(files[k].d+"\n//# sourceURL="+k));s.removeAttribute("integrity");s.removeAttribute("crossorigin");} // defer/async tetap berjalan setelah halaman siap
+      else if(files[k].t==="text"){s.removeAttribute("src");s.removeAttribute("integrity");s.textContent=(files[k].d+"\n//# sourceURL="+k).replace(/<\/script/gi,"<\\/script");}
+      else s.setAttribute("src",fileDataURL(files[k]));}
+    else if(isMod){s.textContent=rewriteModule(s.textContent,files,base,new Set(),memo).replace(/<\/script/gi,"<\\/script");}});
   const attrs=[["img","src"],["audio","src"],["video","src"],["video","poster"],["source","src"],["track","src"],["embed","src"],["object","data"],["input","src"],["image","href"],["image","xlink:href"],["use","href"],["use","xlink:href"],["iframe","src"]];
   for(const [tag,at] of attrs)doc.querySelectorAll(tag).forEach(el=>{const v=el.getAttribute(at);const k=lookupKey(files,base,v);if(!k)return;
     if(tag==="iframe"&&/\.html?$/i.test(k)){el.removeAttribute("src");el.setAttribute("srcdoc",buildFolderPage(bundle,k,false));el.setAttribute("sandbox","allow-scripts allow-forms allow-modals");}
@@ -1208,7 +1262,7 @@ function buildFolderPage(bundle,page,report=true){
   // peta file untuk aset yang dimuat lewat JavaScript (new Audio('a.mp3'), fetch('data.json'), img.src=…)
   const map={},pages={};
   for(const k in files){if(/\.html?$/i.test(k))pages[k]=1;else map[k]=fileDataURL(files[k]);}
-  const tag=`<script>window.__MI_REPORT=${report?1:0};window.__MI_BASE=${JSON.stringify(base)};window.__MI_PAGES=${JSON.stringify(pages)};window.__MI_FILES=${JSON.stringify(map).replace(/<\//g,"<\\/")};${SHIM_JS}${FOLDER_JS}<\/script>`;
+  const tag=`<script>window.__MI_REPORT=${report?1:0};window.__MI_PERSIST=${report&&storeId?1:0};${storeInit(storeId)}window.__MI_BASE=${JSON.stringify(base)};window.__MI_PAGES=${JSON.stringify(pages)};window.__MI_FILES=${JSON.stringify(map).replace(/<\//g,"<\\/")};${SHIM_JS}${FOLDER_JS}<\/script>`;
   const html="<!DOCTYPE html>\n"+doc.documentElement.outerHTML;
   const m=html.match(/<head[^>]*>/i);
   return m?html.slice(0,m.index+m[0].length)+tag+html.slice(m.index+m[0].length):tag+html;
@@ -1492,7 +1546,7 @@ async function startPlay(){
   played=true;document.title=k.judul+" — Media Interaktif";$("#playTitle").textContent=k.ikon+" "+k.judul;
   const body=$("#playBody");
   if(k.berkas&&db){body.innerHTML=`<p style="color:var(--muted)">⏳ Memuat karya…</p>`;
-    try{const d=await loadBerkas(k.id);renderBerkasInto(body,d,true);if(d.tipe==="pdf"){body.insertAdjacentHTML("beforeend","");}}
+    try{const d=await loadBerkas(k.id);renderBerkasInto(body,d,true,k.id);if(d.tipe==="pdf"){body.insertAdjacentHTML("beforeend","");}}
     catch(err){body.innerHTML=`<p>⚠️ Karya tidak bisa dimuat. ${esc(err.message||"")}</p>`;}}
   else if(okUrl(k.link)){body.innerHTML=`<a class="btn btn-primary" href="${esc(k.link)}">🚀 Buka karya</a>`;}
   else{cur=k;body.innerHTML=`<div style="width:100%;max-width:520px;padding:24px">${labHTML(k.demo)}</div>`;initLab(k.demo);}
