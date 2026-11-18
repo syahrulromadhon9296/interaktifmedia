@@ -912,7 +912,7 @@ function renderAdmin(){
   $("#adLogout").hidden=!AUTH_USER;$("#adWho").textContent=AUTH_USER?AUTH_USER.email:"";
   $("#loginForm").hidden=true;$("#lockLogout").hidden=true;
   if(showApp){showAdView(adView);return;}
-  if(!BACKEND){$("#lockMsg").textContent=BACKEND_READY?"Firebase belum diatur. Isi file firebase-config.js sesuai PANDUAN.md.":"Memeriksa akses…";return;}
+  if(!BACKEND){if(!BACKEND_READY){$("#lockMsg").textContent="Memeriksa akses…";return;}$("#lockMsg").innerHTML=`<b>Firebase belum tersambung.</b><br>${esc(SETUP_MSG)}`+(SETUP_DETAIL?`<br><small style="opacity:.7">Detail: ${esc(SETUP_DETAIL)}</small>`:"");return;}
   if(!AUTH_READY){$("#lockMsg").textContent="Memeriksa akses…";return;}
   if(!AUTH_USER){$("#lockMsg").textContent="Masuk dengan akun admin untuk mengelola konten situs.";$("#loginForm").hidden=false;return;}
   $("#lockMsg").textContent=`Akun ${AUTH_USER.email} bukan admin situs ini.`;$("#lockLogout").hidden=false;
@@ -1055,11 +1055,12 @@ $("#lgForgot").onclick=async()=>{const em=$("#lgEmail").value.trim();if(!em){toa
 const doLogout=async()=>{try{await BACKEND.auth.logout();toast("Anda sudah keluar");}catch{}};
 $("#adLogout").onclick=doLogout;$("#lockLogout").onclick=doLogout;
 
-window.startApp=function(backend){
-  BACKEND=backend;BACKEND_READY=true;
+let SETUP_MSG="",SETUP_DETAIL="";
+window.startApp=function(backend,why="",detail=""){
+  BACKEND=backend;BACKEND_READY=true;SETUP_MSG=why;SETUP_DETAIL=detail;
   if(!backend){
     KARYA=SAMPLE.map(k=>clean(k.id,k));MODE="demo";AUTH_READY=true;
-    setNote("ℹ️ Mode contoh: Firebase belum diatur, jadi yang tampil adalah data contoh.");
+    setNote("ℹ️ Mode contoh (data contoh). "+why);
     renderSite();renderAdmin();return;
   }
   db=backend.db;
@@ -1077,14 +1078,29 @@ renderSite();route();
 </script>
 
 <script type="module">
-// Memuat Firebase. Jika firebase-config.js belum diisi, situs berjalan dalam mode contoh.
+// Memuat Firebase. Bila ada yang belum benar, situs berjalan dalam mode contoh
+// dan menyebutkan penyebabnya (lihat juga Console browser: F12).
 const V="10.12.2", CDN=`https://www.gstatic.com/firebasejs/${V}`;
-try{
-  const cfg=await import("./firebase-config.js");
-  if(!cfg.firebaseConfig||!cfg.firebaseConfig.apiKey||cfg.firebaseConfig.apiKey.startsWith("ISI_")){window.startApp(null);}
-  else{
-    const [{initializeApp},F,A]=await Promise.all([import(`${CDN}/firebase-app.js`),import(`${CDN}/firebase-firestore.js`),import(`${CDN}/firebase-auth.js`)]);
-    const app=initializeApp(cfg.firebaseConfig), fs=F.getFirestore(app), auth=A.getAuth(app);
+const fail=(why,detail="")=>{console.warn("[Media Interaktif]",why,detail);window.startApp(null,why,String(detail||""));};
+(async()=>{
+  if(location.protocol==="file:")return fail("File dibuka langsung dari komputer (klik dua kali). Buka lewat alamat GitHub Pages: https://NAMA-AKUN.github.io/NAMA-REPO/#admin");
+  // 1. Apakah firebase-config.js ada di folder yang sama?
+  let res; try{res=await fetch("./firebase-config.js",{cache:"no-store"});}catch(e){return fail("Tidak bisa memeriksa firebase-config.js.",e.message);}
+  if(!res.ok)return fail(`firebase-config.js tidak ditemukan (kode ${res.status}). Pastikan file itu diunggah ke repositori di folder yang sama dengan index.html, dan namanya persis firebase-config.js (huruf kecil).`);
+  // 2. Apakah isinya bisa dibaca?
+  let cfg; try{cfg=await import("./firebase-config.js?v="+Date.now());}
+  catch(e){return fail("firebase-config.js ada salah ketik. Pastikan baris pertamanya tetap 'export const firebaseConfig = {', tidak ada baris 'import …' atau 'initializeApp', dan setiap nilai diapit tanda kutip lalu diakhiri koma.",e.message);}
+  const c=cfg.firebaseConfig;
+  if(!c)return fail("firebase-config.js tidak berisi 'export const firebaseConfig'. Jangan hapus kata 'export'.");
+  if(!c.apiKey||String(c.apiKey).startsWith("ISI_"))return fail("apiKey di firebase-config.js masih contoh (ISI_API_KEY). Ganti dengan nilai dari Firebase Console → Project settings → Your apps.");
+  if(!c.projectId||c.projectId==="nama-proyek")return fail("projectId di firebase-config.js masih 'nama-proyek'. Salin semua nilai dari Firebase, bukan hanya apiKey.");
+  if(!(cfg.ADMIN_EMAILS||[]).length||cfg.ADMIN_EMAILS.includes("email-admin@contoh.com"))console.warn("[Media Interaktif] ADMIN_EMAILS masih contoh; Anda bisa login tapi tidak akan dianggap admin.");
+  // 3. Muat Firebase
+  let initializeApp,F,A;
+  try{[{initializeApp},F,A]=await Promise.all([import(`${CDN}/firebase-app.js`),import(`${CDN}/firebase-firestore.js`),import(`${CDN}/firebase-auth.js`)]);}
+  catch(e){return fail("Gagal mengunduh Firebase. Periksa koneksi internet, atau matikan pemblokir iklan/ekstensi untuk situs ini.",e.message);}
+  try{
+    const app=initializeApp(c), fs=F.getFirestore(app), auth=A.getAuth(app);
     const wrapDoc=d=>({id:d.id,exists:d.exists(),data:()=>d.data(),metadata:{fromCache:d.metadata.fromCache}});
     const ref=r=>({id:r.id,path:r.path,
       get:async()=>wrapDoc(await F.getDoc(r)),
@@ -1092,17 +1108,17 @@ try{
       onSnapshot:(n,e)=>F.onSnapshot(r,s=>n(wrapDoc(s)),e)});
     const db={
       doc:p=>ref(F.doc(fs,p)),
-      collection:c=>({doc:id=>ref(id?F.doc(fs,c,id):F.doc(F.collection(fs,c))),
-        onSnapshot:(n,e)=>F.onSnapshot(F.collection(fs,c),s=>n({docs:s.docs.map(wrapDoc),metadata:{fromCache:s.metadata.fromCache}}),e)})};
-    const admins=(cfg.ADMIN_EMAILS||[]).map(x=>String(x).toLowerCase());
+      collection:col=>({doc:id=>ref(id?F.doc(fs,col,id):F.doc(F.collection(fs,col))),
+        onSnapshot:(n,e)=>F.onSnapshot(F.collection(fs,col),s=>n({docs:s.docs.map(wrapDoc),metadata:{fromCache:s.metadata.fromCache}}),e)})};
+    const admins=(cfg.ADMIN_EMAILS||[]).map(x=>String(x).trim().toLowerCase());
     window.startApp({db,
       isAdmin:u=>admins.includes(String(u.email||"").toLowerCase()),
       auth:{onChange:cb=>A.onAuthStateChanged(auth,u=>cb(u?{email:u.email}:null)),
         login:(e,p)=>A.signInWithEmailAndPassword(auth,e,p),
         logout:()=>A.signOut(auth),
         reset:e=>A.sendPasswordResetEmail(auth,e)}});
-  }
-}catch(err){console.error(err);window.startApp(null);}
+  }catch(e){fail("Nilai di firebase-config.js tidak diterima Firebase. Salin ulang semua nilai dari Project settings → Your apps.",e.message);}
+})();
 </script>
 </body>
 </html>
